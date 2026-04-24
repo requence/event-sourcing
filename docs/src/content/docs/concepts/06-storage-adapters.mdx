@@ -1,0 +1,186 @@
+---
+title: Storage Adapters
+description: Choose between built-in storage backends for the event store.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## Overview
+
+`@requence/event-sourcing` ships with pluggable storage adapters that implement the low-level persistence layer — event storage, checkpoints, and snapshots. The core library defines the interfaces; each adapter provides a concrete `createEventStore` function that wires everything together.
+
+| Adapter | Import | Use case |
+|---------|--------|----------|
+| **In-Memory** | `@requence/event-sourcing/memory` | Testing, prototyping, single-process apps |
+| **Drizzle (PostgreSQL)** | `@requence/event-sourcing/drizzle` | Production workloads |
+
+Both adapters expose the same `createEventStore` and `createAggregateRoot` API, so you can swap between them by changing a single import.
+
+---
+
+## In-Memory Adapter
+
+The in-memory adapter stores events, checkpoints, and snapshots in plain JavaScript arrays and maps. It requires **no external dependencies** and works out of the box.
+
+```typescript
+import { createEventStore, createAggregateRoot } from '@requence/event-sourcing/memory'
+
+const eventStore = createEventStore({
+  aggregateRoots: [userAggregateRoot],
+})
+```
+
+### When to use
+
+- **Unit and integration tests** — no database setup needed, tests run instantly.
+- **Prototyping** — focus on your domain logic before committing to a database.
+- **Single-process applications** — lightweight apps that don't need durable persistence.
+
+<Aside type="caution">
+  All data is lost when the process exits. Do not use the in-memory adapter for production workloads that require durability.
+</Aside>
+
+### Configuration
+
+```typescript
+import { createEventStore, createAggregateRoot } from '@requence/event-sourcing/memory'
+
+const eventStore = createEventStore({
+  // Required — one or more aggregate roots
+  aggregateRoots: [user, project],
+
+  // Optional — disable automatic initialization (default: true)
+  autoInit: false,
+
+  // Optional — callback invoked after events are appended
+  onEventsAppended(events) {
+    console.log(`${events.length} event(s) appended`)
+  },
+
+  // Optional — progress callbacks for projection replays
+  onProjectionReplay: {
+    begin(name) { console.log(`Replaying ${name}…`) },
+    end(name) { console.log(`${name} replay complete`) },
+  },
+
+  // Optional — progress callbacks for process manager refreshes
+  onProcessManagerRefresh: {
+    begin(name) { console.log(`Refreshing ${name}…`) },
+    end(name) { console.log(`${name} refresh complete`) },
+  },
+
+  // Optional — post-process events before they are appended
+  postProcessEvent(event, aggregateRoot) {
+    return event
+  },
+})
+```
+
+### Features
+
+The in-memory adapter provides full support for all event store features:
+
+- **Event storage** with position tracking and concurrency checks
+- **Checkpoints** for projection and process manager catch-up
+- **Aggregate root snapshots** for fast stream rehydration
+- **Projection snapshots** with applied-count tracking
+- **`ConcurrencyError`** thrown when the expected stream version doesn't match
+
+---
+
+## Drizzle (PostgreSQL) Adapter
+
+The Drizzle adapter persists events to a PostgreSQL database using [Drizzle ORM](https://orm.drizzle.team). It is the recommended choice for production.
+
+```typescript
+import { createEventStore, createAggregateRoot } from '@requence/event-sourcing/drizzle'
+import { drizzle } from 'drizzle-orm/node-postgres'
+
+const db = drizzle(process.env.DATABASE_URL!)
+
+const eventStore = createEventStore({
+  database: db,
+  aggregateRoots: [userAggregateRoot],
+})
+```
+
+### Database Schema
+
+The adapter uses a dedicated `event_sourcing` PostgreSQL schema with the following tables:
+
+| Table | Purpose |
+|-------|---------|
+| `events` | Append-only event log with position, stream, and metadata |
+| `checkpoints` | Last-processed position per projection/process manager |
+| `aggregate_root_snapshots` | Cached aggregate state for fast rehydration |
+| `projection_snapshots` | Cached projection state for snapshot-based projections |
+| `projection_applied_events` | Counter for snapshot frequency tracking |
+
+The table definitions are exported from `@requence/event-sourcing/drizzle/postgres` for use in Drizzle migrations:
+
+```typescript
+import {
+  events,
+  checkpoints,
+  aggregateRootSnapshots,
+  projectionSnapshots,
+  projectionAppliedEvents,
+} from '@requence/event-sourcing/drizzle/postgres'
+```
+
+### Configuration
+
+```typescript
+const eventStore = createEventStore({
+  // Required — Drizzle database instance or factory
+  database: db,
+
+  // Required — one or more aggregate roots
+  aggregateRoots: [user, project],
+
+  // Optional — disable automatic initialization
+  autoInit: false,
+
+  // Optional — callback invoked after events are appended
+  onEventsAppended(events) {
+    // e.g. broadcast via WebSocket
+  },
+
+  // Optional — replay and refresh progress callbacks
+  onProjectionReplay: { /* ... */ },
+  onProcessManagerRefresh: { /* ... */ },
+
+  // Optional — post-process events before persistence
+  postProcessEvent(event, aggregateRoot) {
+    return event
+  },
+})
+```
+
+<Aside type="tip">
+  The `database` parameter accepts either a Drizzle instance or a factory function `() => NodePgDatabase`. Use a factory when your database connection is lazy-initialized or pooled.
+</Aside>
+
+---
+
+## Swapping Adapters
+
+Because both adapters conform to the same `EventStore` interface, switching between them is a one-line change:
+
+```diff
+- import { createEventStore, createAggregateRoot } from '@requence/event-sourcing/drizzle'
++ import { createEventStore, createAggregateRoot } from '@requence/event-sourcing/memory'
+
+  const eventStore = createEventStore({
+-   database: db,
+    aggregateRoots: [user],
+  })
+```
+
+A common pattern is to select the adapter based on the environment:
+
+```typescript
+const { createEventStore } = process.env.NODE_ENV === 'test'
+  ? await import('@requence/event-sourcing/memory')
+  : await import('@requence/event-sourcing/drizzle')
+```

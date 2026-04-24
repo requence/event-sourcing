@@ -1,0 +1,41 @@
+---
+title: Introduction to Event Sourcing
+description: What is event sourcing and why you should use it.
+---
+
+## What is Event Sourcing?
+
+Event Sourcing is an architectural pattern where, instead of storing just the current state of the data in a domain, we store a sequence of events that represent everything that has ever happened in that domain. 
+
+In a traditional CRUD (Create, Read, Update, Delete) application, when a user updates their name, the database simply overwrites the old name with the new one. The previous state is lost forever.
+
+In an Event Sourced system, instead of updating a record directly, we append an event to an **Event Store**. For example, if a user changes their name, we append an event called `UserRenamed` with the new name. The current state is then derived by replaying these events from the beginning. 
+
+## Why Use Event Sourcing?
+
+### Single Source of Truth
+The append-only log of events acts as the absolute, immutable truth of what happened in the system. Because events are never updated or deleted, you have a perfect historical record. If you ever need to know *how* a specific state was reached, the events provide the full context.
+
+### Complete Audit Trail
+Since every action that changes state is recorded as an event, you automatically get an audit log for free. This is especially useful in domains like finance, healthcare, or any system where compliance and tracking changes are critical.
+
+### Replayability and Time Travel
+Because the current state is merely a projection derived from past events, you can "time travel" by replaying events up to a specific point in time. This is invaluable for debugging, as you can recreate the exact state of the system when an error occurred.
+
+### Flexibility and Evolution
+If you realize you need a new way to query or view your data (a new "Projection"), you don't need to try and migrate a complex relational database. You can simply write a new projection, replay all past events into it, and you instantly have a fully populated new view of your historical data.
+
+### Scalability and Performance
+Writing events is an append-only operation, which is extremely fast and avoids the lock contention common in traditional databases under high load. Read models (Projections) can be optimized specifically for querying without worrying about the complexity of the write operations.
+
+## Core Concepts
+
+To build an Event Sourced system with `@requence/event-sourcing`, you'll use the following primitives:
+
+- **Aggregate Roots**: Define your domain model — the events it can emit, the business rules it enforces, and the commands it accepts.
+- **Projections**: Build and maintain queryable read models (e.g., database tables) from events. Support full replay from scratch.
+- **Process Managers**: Coordinate workflows and cascading operations across multiple aggregates (e.g., deleting all child entities when a parent is removed).
+- **Event Listeners**: React to events with lightweight, stateless side effects like cache invalidation or notifications.
+- **Storage Adapters**: Choose a persistence backend — from a zero-dependency in-memory store for testing to PostgreSQL via Drizzle for production.
+
+In the following chapters, we'll dive deep into each of these concepts.

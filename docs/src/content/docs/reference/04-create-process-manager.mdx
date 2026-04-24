@@ -1,0 +1,100 @@
+---
+title: createProcessManager
+description: API reference for process managers — workflow coordinators that react to events and issue commands across aggregate roots.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Process managers are created via `eventStore.createProcessManager(name)`. They coordinate workflows across multiple aggregate roots by listening for events and issuing commands in response.
+
+## Creation
+
+```typescript
+const pm = eventStore.createProcessManager('cascade-delete')
+```
+
+## Builder Methods
+
+### `.withState(state)`
+
+Defines optional internal state. The state is persisted alongside checkpoints and restored on catch-up.
+
+```typescript
+pm.withState({ pendingDeletions: [] })
+```
+
+### `.withEventHandlers(handlers)`
+
+Registers event handlers named `on{EventName}`. If state was defined, accepts a callback receiving the state.
+
+```typescript
+// Without state
+pm.withEventHandlers({
+  async onOrganizationDeleted({ streamId }) {
+    const users = await db.select().from(usersTable)
+      .where(eq(usersTable.orgId, streamId))
+    for (const user of users) {
+      userRoot.loadStream(user.id).delete()
+    }
+  },
+})
+
+// With state
+pm.withEventHandlers((state) => ({
+  async onUserCreated({ payload }) {
+    state.userCount++
+  },
+}))
+```
+
+Each handler receives `(event, { refreshing })` where `refreshing` is `true` during a refresh operation.
+
+### `.withAfterEffects(handlers)`
+
+Registers handlers that run **after** all `on{EventName}` handlers have completed. Uses the `after{EventName}` naming convention.
+
+```typescript
+pm.withAfterEffects({
+  async afterOrderCompleted({ payload }) {
+    await sendConfirmationEmail(payload.email)
+  },
+})
+```
+
+<Aside type="tip">
+  Use `withAfterEffects` when your handler depends on projections being up-to-date.
+</Aside>
+
+### `.concurrent()`
+
+Disables the default exclusive per-stream locking.
+
+## State Methods
+
+Available only when `.withState()` has been called:
+
+| Method | Return Type | Description |
+|---|---|---|
+| `.state()` | `Promise<State>` | Returns current state after all pending events have been processed. |
+| `.refreshState()` | `Promise<void>` | Full state refresh — replays all events from scratch. |
+
+## Other Methods
+
+### `.isReady()`
+
+Returns a promise that resolves when the process manager has finished its initial catch-up.
+
+## Context Helpers
+
+```typescript
+import { isInsideProcessManager, getProcessManagerInfo } from '@requence/event-sourcing'
+```
+
+| Function | Return Type | Description |
+|---|---|---|
+| `isInsideProcessManager()` | `boolean` | `true` if called within a process manager event handler. |
+| `getProcessManagerInfo()` | `{ name, event } \| undefined` | Returns the process manager name and triggering event. |
+
+<Aside type="caution">
+  The library detects infinite loops when a process manager listens for and emits the same event on the same stream. An `InfiniteLoopError` is thrown automatically.
+</Aside>

@@ -1,0 +1,34 @@
+---
+import Default from '@astrojs/starlight/components/PageFrame.astro'
+import SplashBackground from '../Splash.tsx'
+
+const isSplash = Astro.locals.starlightRoute?.entry?.data?.template === 'splash'
+---
+
+{isSplash && <SplashBackground client:load />}
+<Default {...Astro.props}>
+  <slot name="header" slot="header" />
+  <slot name="sidebar" slot="sidebar" />
+  <slot />
+</Default>
+
+<style is:global>
+  /* Splash canvas sits fixed behind everything */
+  .splash-bg {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 0 !important;
+    pointer-events: none;
+  }
+
+  /* Let pointer events through to the canvas only when hovering the background */
+  .splash-bg canvas {
+    pointer-events: auto;
+  }
+
+  /* Make the page frame layer sit above the splash */
+  .page {
+    position: relative;
+    z-index: 1;
+  }
+</style>

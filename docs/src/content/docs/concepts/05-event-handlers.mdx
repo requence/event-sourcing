@@ -1,0 +1,130 @@
+---
+title: Event Listeners
+description: Learn how to use Event Listeners for side effects.
+---
+
+## What is an Event Listener?
+
+An **Event Listener** is the simplest way to react to events in your system. While Projections build read models and Process Managers orchestrate complex workflows, Event Listeners are ideal for lightweight, stateless side effects.
+
+Common use cases include:
+- Invalidating caches when data changes.
+- Sending notifications to external systems.
+- Logging or monitoring event flow.
+
+## Defining an Event Listener
+
+Event Listeners are created via `eventStore.createEventListener()`. Unlike Projections and Process Managers, Event Listeners are **not** checkpointed — they don't track which events they've seen. They only react to events as they flow through the system in real time.
+
+### Example
+
+Here is an event listener used for cache invalidation:
+
+```typescript
+import eventStore from './eventStore'
+import cache from './cache'
+
+eventStore
+  .createEventListener('projectCache')
+  .withAfterEffects({
+    afterProjectUpdated({ streamId }) {
+      cache.invalidate(['project', streamId])
+    },
+    afterProjectDeleted({ streamId }) {
+      cache.invalidate(['project', streamId])
+    },
+  })
+```
+
+## Handler Types
+
+Event Listeners support four types of handlers, giving you fine-grained control over when your side effects run:
+
+### `withEventHandlers`
+
+Listen to specific event types. These run during the main event processing phase, alongside projections and process managers:
+
+```typescript
+eventStore
+  .createEventListener('notifications')
+  .withEventHandlers({
+    async onProjectCreated({ payload, actorId }) {
+      await sendSlackNotification(
+        `Project "${payload.name}" was created by ${actorId}`
+      )
+    },
+  })
+```
+
+### `withAfterEffects`
+
+Listen to specific event types, but run *after* all event handlers (across all listeners, projections, and process managers) have completed. Use the `after<EventName>` naming convention:
+
+```typescript
+eventStore
+  .createEventListener('cacheInvalidation')
+  .withAfterEffects({
+    afterProjectUpdated({ streamId }) {
+      cache.invalidate(['project', streamId])
+    },
+    afterProjectDeleted({ streamId }) {
+      cache.invalidate(['project', streamId])
+    },
+  })
+```
+
+### `withGlobalEventHandler`
+
+A catch-all handler that runs for *every* event. Useful for logging or monitoring:
+
+```typescript
+eventStore
+  .createEventListener('systemLogger')
+  .withGlobalEventHandler((event) => {
+    console.log(`[Event] ${event.type} for stream ${event.streamId}`)
+  })
+```
+
+### `withGlobalAfterEffect`
+
+A catch-all handler that runs for every event *after* all other handlers have completed:
+
+```typescript
+eventStore
+  .createEventListener('analytics')
+  .withGlobalAfterEffect(async ({ type, streamId, actorId }) => {
+    await trackEvent(type, { streamId, actorId })
+  })
+```
+
+## Combining Handler Types
+
+You can chain multiple handler types on the same listener. This is a common pattern — specific after-effects combined with a global catch-all:
+
+```typescript
+eventStore
+  .createEventListener('projectCache')
+  .withAfterEffects({
+    afterProjectUpdated({ streamId }) {
+      cache.invalidate(['project', streamId])
+    },
+    afterProjectDeleted({ streamId }) {
+      cache.invalidate(['project', streamId])
+    },
+  })
+  .withGlobalAfterEffect(async ({ type, streamId }) => {
+    // Invalidate a general "list" cache whenever any event occurs
+    cache.invalidate(['project-list'])
+  })
+```
+
+## When to use what?
+
+| | **Projection** | **Process Manager** | **Event Listener** |
+|---|---|---|---|
+| **Purpose** | Build queryable read models | Coordinate workflows across aggregates | Lightweight side effects |
+| **Stateful** | Persists to a database | Optionally stateful (`.withState()`) | Stateless |
+| **Checkpointed** | Yes — tracks last processed event | Yes — can be refreshed | No — fire-and-forget |
+| **Replayable** | Yes (via `.withReplay()`) | Yes (via `.refreshState()`) | No |
+| **Can dispatch commands** | No (throws error) | Yes | Yes (via after effects) |
+| **Example use case** | SQL table mirroring events | Cascade-delete child entities | Cache invalidation, notifications |

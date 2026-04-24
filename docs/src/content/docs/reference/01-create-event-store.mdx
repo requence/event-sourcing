@@ -1,0 +1,161 @@
+---
+title: createEventStore
+description: API reference for the createEventStore function — the central hub that wires together aggregate roots, storage, and event distribution.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`createEventStore` is the central orchestrator of the library. It connects your aggregate roots to the underlying storage, manages event distribution to projections, process managers, and event listeners, and handles initialization and replay.
+
+## Import
+
+```typescript
+import { createEventStore } from '@requence/event-sourcing'
+```
+
+## Signature
+
+```typescript
+function createEventStore<Root extends AnyAggregateRoot>(
+  params: EventStoreParams<Root>
+): EventStore<Event, Root>
+```
+
+## Parameters
+
+The function accepts a single configuration object:
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `loadEvents` | `LoadEvents` | ✓ | Async generator that loads events from the underlying storage. |
+| `appendEvents` | `AppendEvents` | ✓ | Function that persists new events and returns them with assigned positions. |
+| `aggregateRoots` | `Root[]` | ✓ | Array of aggregate root instances to register. |
+| `checkpoint` | `CheckpointMethods` | ✓ | Methods for persisting projection/process manager checkpoints. |
+| `lock` | `LockCreator` | | Custom locking strategy. Defaults to an in-memory lock with a 5-second timeout. |
+| `aggregateRootSnapshot` | `AggregateRootSnapshotMethods` | | Enables snapshot support for aggregate roots. |
+| `projectionSnapshot` | `ProjectionSnapshotMethods` | | Enables snapshot support for projections. |
+| `postProcessEvent` | `(event, aggregateRoot) => WrappedEvent` | | Hook to mutate or decorate events before they are appended. |
+| `onProjectionReplay` | `OnProgress` | | Callbacks for tracking projection replay progress. |
+| `onProcessManagerRefresh` | `OnProgress` | | Callbacks for tracking process manager refresh progress. |
+| `autoInit` | `boolean` | | When set to `false`, the event store will not initialize automatically. You must call `.init()` manually. Defaults to `true`. |
+
+## Return Value
+
+Returns an `EventStore` object with the following methods:
+
+### `createProjection(name)`
+
+Creates and registers a new [Projection](/reference/03-create-projection/) with the given name. Each name must be unique within the event store.
+
+```typescript
+const userList = eventStore.createProjection('user-list')
+  .withEventHandlers({
+    async onUserCreated({ streamId, payload }) { /* ... */ }
+  })
+```
+
+### `createProcessManager(name)`
+
+Creates and registers a new [Process Manager](/reference/04-create-process-manager/) with the given name.
+
+```typescript
+const cascadeDelete = eventStore.createProcessManager('cascade-delete')
+  .withEventHandlers({
+    async onOrganizationDeleted({ payload }) { /* ... */ }
+  })
+```
+
+### `createEventListener(name)`
+
+Creates and registers a new [Event Listener](/reference/05-create-event-listener/) with the given name.
+
+```typescript
+const auditLog = eventStore.createEventListener('audit-log')
+  .withEventHandlers({
+    async onUserCreated({ payload }) { /* ... */ }
+  })
+```
+
+### `getAggregateRoot(type)`
+
+Returns a registered aggregate root by its type name. Fully type-safe — the return type narrows based on the provided type string.
+
+```typescript
+const userRoot = eventStore.getAggregateRoot('user')
+```
+
+### `transaction(handler)`
+
+Executes the given async handler inside a transaction. Events from all aggregate roots within the handler are batched and committed atomically.
+
+```typescript
+await eventStore.transaction(async () => {
+  const org = orgRoot.newStream()
+  org.create({ name: 'Acme' })
+
+  const user = userRoot.newStream()
+  user.create({ name: 'Alice', orgId: org.streamId })
+})
+```
+
+### `init()`
+
+Manually initializes the event store. Required when `autoInit` is set to `false`. Returns the event store instance for chaining.
+
+```typescript
+const store = createEventStore({ autoInit: false, /* ... */ })
+await store.init()
+```
+
+### `isReady()`
+
+Returns a promise that resolves when all projections and process managers have finished their initial catch-up hydration.
+
+```typescript
+await eventStore.isReady()
+// All projections and process managers are now up to date
+```
+
+### `rebuild()`
+
+Performs a full rebuild of all replayable projections and stateful process managers. This re-reads every event from the store and re-applies them from scratch.
+
+```typescript
+await eventStore.rebuild()
+```
+
+<Aside type="caution">
+  `rebuild()` will call `deleteAll` on every projection that supports replay and reset the state of every stateful process manager. This can be a destructive and long-running operation.
+</Aside>
+
+## Usage Example
+
+```typescript
+import { createEventStore } from '@requence/event-sourcing'
+import { createDrizzleAdapter } from '@requence/event-sourcing/drizzle'
+import userRoot from './aggregates/user.ts'
+import orgRoot from './aggregates/organization.ts'
+
+const adapter = createDrizzleAdapter(db)
+
+const eventStore = createEventStore({
+  loadEvents: adapter.loadEvents,
+  appendEvents: adapter.appendEvents,
+  checkpoint: adapter.checkpoint,
+  aggregateRoots: [userRoot, orgRoot],
+})
+
+await eventStore.isReady()
+```
+
+## OnProgress Callback
+
+The `onProjectionReplay` and `onProcessManagerRefresh` parameters accept an object with the following optional callbacks:
+
+```typescript
+type OnProgress = {
+  begin?: (name: string) => void
+  progress?: (name: string, index: number, event: BaseOutputEvent) => void
+  end?: (name: string) => void
+}
+```

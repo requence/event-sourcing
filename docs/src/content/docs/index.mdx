@@ -1,0 +1,51 @@
+---
+title: Event Sourcing
+description: A high-performance, type-safe event sourcing library for TypeScript.
+template: splash
+hero:
+  tagline: Build resilient, auditable systems with a type-safe event sourcing foundation.
+  actions:
+    - text: Get Started
+      link: /concepts/01-introduction/
+      icon: right-arrow
+    - text: View on GitHub
+      link: https://github.com/requence/event-sourcing
+      icon: external
+      variant: minimal
+---
+
+import LucideIcon from '../../components/LucideIcon.astro';
+
+## Why Event Sourcing?
+
+<div class="card-grid">
+  <article class="feature-card">
+    <div class="feature-icon">
+      <LucideIcon name="Scroll" size={22} />
+    </div>
+    <h3>Complete Audit Trail</h3>
+    <p>Every state change is captured as an immutable event, giving you a full history of your data.</p>
+  </article>
+  <article class="feature-card">
+    <div class="feature-icon">
+      <LucideIcon name="FileCode2" size={22} />
+    </div>
+    <h3>Type-Safe Events</h3>
+    <p>Leverage TypeScript's type system for compile-time guarantees on event shapes and handlers.</p>
+  </article>
+  <article class="feature-card">
+    <div class="feature-icon">
+      <LucideIcon name="History" size={22} />
+    </div>
+    <h3>Time Travel</h3>
+    <p>Replay events to reconstruct past states, debug issues, or build new read models from existing data.</p>
+  </article>
+  <article class="feature-card">
+    <div class="feature-icon">
+      <LucideIcon name="Layers" size={22} />
+    </div>
+    <h3>Scalable Architecture</h3>
+    <p>Decouple writes from reads with CQRS patterns for independently scalable components.</p>
+  </article>
+</div>
+

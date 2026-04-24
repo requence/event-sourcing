@@ -1,0 +1,73 @@
+---
+title: createEventListener
+description: API reference for event listeners — lightweight, stateless handlers for side effects like notifications and cache invalidation.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Event listeners are created via `eventStore.createEventListener(name)`. They are the simplest way to react to events — ideal for stateless side effects like sending emails, invalidating caches, or logging.
+
+Unlike projections and process managers, event listeners have **no checkpoint tracking**, **no replay support**, and **no state**. They fire for every event as it is emitted.
+
+## Creation
+
+```typescript
+const listener = eventStore.createEventListener('notifications')
+```
+
+## Builder Methods
+
+### `.withEventHandlers(handlers)`
+
+Registers event handlers named `on{EventName}`.
+
+```typescript
+listener.withEventHandlers({
+  async onUserCreated({ payload }) {
+    await sendWelcomeEmail(payload.email)
+  },
+})
+```
+
+### `.withGlobalEventHandler(handler)`
+
+Registers a catch-all handler called for every event.
+
+```typescript
+listener.withGlobalEventHandler(async (event) => {
+  console.log(`Event ${event.type} at position ${event.position}`)
+})
+```
+
+### `.withAfterEffects(handlers)`
+
+Registers handlers that run after all `on{EventName}` handlers. Uses `after{EventName}` naming.
+
+```typescript
+listener.withAfterEffects({
+  async afterUserDeleted({ streamId }) {
+    await invalidateCache(`user:${streamId}`)
+  },
+})
+```
+
+### `.withGlobalAfterEffect(handler)`
+
+A catch-all handler that runs after all after-effect handlers.
+
+```typescript
+listener.withGlobalAfterEffect(async (event) => {
+  await auditLog.append(event)
+})
+```
+
+## Context Helpers
+
+```typescript
+import { isInsideEventListener, getEventListenerInfo } from '@requence/event-sourcing'
+```
+
+| Function | Return Type | Description |
+|---|---|---|
+| `isInsideEventListener()` | `boolean` | `true` if called within an event listener handler. |
+| `getEventListenerInfo()` | `{ name, event } \| undefined` | Returns the listener name and triggering event. |

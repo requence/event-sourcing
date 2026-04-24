@@ -1,0 +1,91 @@
+{
+  "name": "@requence/event-sourcing",
+  "version": "0.0.1",
+  "description": "Event sourcing primitives — aggregate roots, projections, process managers, and event listeners",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "bun": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./drizzle/postgres": {
+      "bun": "./src/drizzle/postgres.ts",
+      "types": "./dist/drizzle/postgres.d.ts",
+      "import": "./dist/drizzle/postgres.js",
+      "default": "./dist/drizzle/postgres.js"
+    },
+    "./drizzle": {
+      "bun": "./src/drizzle/index.ts",
+      "types": "./dist/drizzle/index.d.ts",
+      "import": "./dist/drizzle/index.js",
+      "default": "./dist/drizzle/index.js"
+    },
+    "./memory": {
+      "bun": "./src/memory/index.ts",
+      "types": "./dist/memory/index.d.ts",
+      "import": "./dist/memory/index.js",
+      "default": "./dist/memory/index.js"
+    },
+    "./redis": {
+      "bun": "./src/redis/index.ts",
+      "types": "./dist/redis/index.d.ts",
+      "import": "./dist/redis/index.js",
+      "default": "./dist/redis/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "bun run build.ts",
+    "test": "bun test",
+    "check-types": "tsc --noEmit",
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "bun run build && changeset publish",
+    "prepublishOnly": "bun run build"
+  },
+  "dependencies": {
+    "async-mutex": "^0.5.0",
+    "fast-equals": "^5.3.3",
+    "superjson": "^2.2.5"
+  },
+  "peerDependencies": {
+    "zod": "^4.3.6",
+    "drizzle-orm": "^0.45.1",
+    "ioredis": "^5.9.3"
+  },
+  "peerDependenciesMeta": {
+    "drizzle-orm": {
+      "optional": true
+    },
+    "ioredis": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@changesets/changelog-github": "^0.6.0",
+    "@changesets/cli": "^2.31.0",
+    "@types/bun": "latest",
+    "drizzle-orm": "^0.45.1",
+    "ioredis": "^5.9.3",
+    "typescript": "^5.9.2",
+    "zod": "^4.3.6"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/requence/event-sourcing"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

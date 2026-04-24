@@ -1,0 +1,48 @@
+---
+/**
+ * Renders a Lucide icon as inline SVG at build time.
+ * Usage: <LucideIcon name="Pencil" size={20} />
+ *
+ * Icon names use PascalCase (e.g. "ArrowRight", "BookOpen", "Rocket").
+ * Browse all icons at https://lucide.dev/icons
+ */
+import * as icons from 'lucide'
+
+interface Props {
+  name: string
+  size?: number | string
+  class?: string
+  color?: string
+  strokeWidth?: number | string
+}
+
+const {
+  name,
+  size = 24,
+  class: className,
+  color = 'currentColor',
+  strokeWidth = 2,
+} = Astro.props
+
+const iconNodes = (icons as Record<string, [string, Record<string, string>][]>)[name]
+if (!iconNodes) throw new Error(`Lucide icon "${name}" not found. Check https://lucide.dev/icons`)
+---
+
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width={size}
+  height={size}
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke={color}
+  stroke-width={strokeWidth}
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  class={className}
+  aria-hidden="true"
+>
+  {iconNodes.map(([tag, attrs]) => {
+    const Tag = tag as any
+    return <Tag {...attrs} />
+  })}
+</svg>

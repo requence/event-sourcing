@@ -1,0 +1,146 @@
+---
+title: Errors
+description: API reference for all error classes thrown by the event sourcing library.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+All custom error classes are exported from the main package.
+
+```typescript
+import {
+  ConcurrencyError,
+  ValidationError,
+  EventValidationError,
+  CommandError,
+  InfiniteLoopError,
+  ProjectionReplayLoopError,
+  ProjectionEventHandlerExecutionError,
+  ProcessManagerEventHandlerExecutionError,
+  ReplaySkipError,
+  RefreshingSkipError,
+} from '@requence/event-sourcing'
+```
+
+## Error Classes
+
+### `ConcurrencyError`
+
+Thrown when an optimistic concurrency conflict is detected — i.e., the stream version has changed between when events were loaded and when new events were appended.
+
+| Property | Type | Description |
+|---|---|---|
+| `message` | `string` | Includes stream name, ID, expected and actual versions. |
+
+### `CommandError<T>`
+
+Wraps any error thrown inside a command handler. Provides context about which aggregate root and command caused the error.
+
+| Property | Type | Description |
+|---|---|---|
+| `aggregateRootType` | `string` | The aggregate root type name. |
+| `commandName` | `string` | The command that threw. |
+| `streamId` | `string` | The stream ID. |
+| `originalError` | `T` | The original error. |
+
+<Aside type="tip">
+  Use `stream.transformError(ErrorClass, handler)` to intercept `CommandError` and map it to a more specific application error.
+</Aside>
+
+### `ValidationError`
+
+Thrown when a Zod schema validation fails (e.g., when loading a snapshot with an invalid shape).
+
+| Property | Type | Description |
+|---|---|---|
+| `zodError` | `z.ZodError` | The underlying Zod error. |
+
+### `EventValidationError`
+
+Extends `ValidationError`. Thrown when an event payload fails validation against its registered Zod schema before being appended.
+
+### `InfiniteLoopError`
+
+Thrown when a process manager emits the same event that triggered it on the same stream — indicating a recursive event cycle.
+
+### `ProjectionReplayLoopError`
+
+Thrown when a projection event handler tries to `replayUntil` a position in the future (at or after the current event's position).
+
+| Property | Type | Description |
+|---|---|---|
+| `projection` | `{ name, eventHandler }` | The projection name and handler. |
+| `event` | `OutputEvent` | The current event. |
+
+### `ProjectionEventHandlerExecutionError<T>`
+
+Wraps errors thrown inside a projection event handler.
+
+| Property | Type | Description |
+|---|---|---|
+| `projection` | `string` | The projection name. |
+| `eventHandler` | `string` | The handler name (e.g., `onUserCreated`). |
+| `event` | `BaseOutputEvent` | The event being processed. |
+| `originalError` | `T` | The original error. |
+
+### `ProcessManagerEventHandlerExecutionError<T>`
+
+Wraps errors thrown inside a process manager event handler.
+
+| Property | Type | Description |
+|---|---|---|
+| `processManager` | `string` | The process manager name. |
+| `eventHandler` | `string` | The handler name. |
+| `event` | `BaseOutputEvent` | The event being processed. |
+| `originalError` | `T` | The original error. |
+
+## Flow Control Errors
+
+These errors are used internally for flow control during replay and refresh operations:
+
+### `ReplaySkipError`
+
+Throw inside a projection event handler during replay to silently skip the current event.
+
+```typescript
+import { ReplaySkipError } from '@requence/event-sourcing'
+
+projection.withEventHandlers({
+  async onUserCreated(event, { replaying }) {
+    if (replaying && someCondition) {
+      throw new ReplaySkipError()
+    }
+    // ...
+  },
+})
+```
+
+### `RefreshingSkipError`
+
+Throw inside a process manager event handler during refresh to silently skip the current event.
+
+```typescript
+import { RefreshingSkipError } from '@requence/event-sourcing'
+```
+
+<Aside type="caution">
+  Both `ReplaySkipError` and `RefreshingSkipError` will throw if used outside their respective replay/refresh contexts.
+</Aside>
+
+## Utility Exports
+
+### `skipReplay`
+
+A convenience helper that throws `ReplaySkipError`.
+
+```typescript
+import { skipReplay } from '@requence/event-sourcing'
+```
+
+### `skipRefreshing`
+
+A convenience helper that throws `RefreshingSkipError`.
+
+```typescript
+import { skipRefreshing } from '@requence/event-sourcing'
+```

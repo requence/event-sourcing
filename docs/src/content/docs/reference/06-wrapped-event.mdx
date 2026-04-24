@@ -1,0 +1,64 @@
+---
+title: WrappedEvent
+description: API reference for the WrappedEvent type — the chainable wrapper for decorating events with metadata, causation, and correlation IDs.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+A `WrappedEvent` is the object returned when you call the `event()` builder inside a command. It provides a chainable API for attaching metadata, tracing IDs, and error handlers to an event before it is persisted.
+
+## Import
+
+```typescript
+import type { WrappedEvent } from '@requence/event-sourcing'
+```
+
+## Chainable Methods
+
+All methods return the `WrappedEvent` for chaining.
+
+| Method | Description |
+|---|---|
+| `.withCausationId(id)` | Sets the causation ID (overrides any existing value). |
+| `.withDefaultCausationId(id)` | Sets the causation ID only if one is not already set. |
+| `.withCorrelationId(id)` | Sets the correlation ID (overrides any existing value). |
+| `.withDefaultCorrelationId(id)` | Sets the correlation ID only if one is not already set. |
+| `.withActorId(id)` | Sets the actor ID (overrides any existing value). |
+| `.withDefaultActorId(id)` | Sets the actor ID only if one is not already set. |
+| `.withMetadata(metadata)` | Sets the metadata object (overrides any existing value). |
+| `.withDefaultMetadata(metadata)` | Sets metadata only if none is already set. |
+| `.withAdditionalMetadata(metadata)` | Merges metadata into existing metadata. |
+| `.onValidationError(handler)` | Registers a handler called if the event payload fails Zod validation. |
+
+## Usage
+
+```typescript
+.withCommands((state, event) => ({
+  rename(name: string, actorId: string) {
+    return event('UserRenamed', { name })
+      .withActorId(actorId)
+      .withMetadata({ source: 'admin-panel' })
+  },
+}))
+```
+
+## Event Shape
+
+Once a `WrappedEvent` is persisted, it becomes a `BaseOutputEvent` with the following shape:
+
+```typescript
+type BaseOutputEvent = {
+  position: number          // Global sequence number
+  type: string              // Event name (e.g. 'UserCreated')
+  schemaVersion: number     // Schema version of the payload
+  payload: unknown          // The validated event data
+  metadata?: Record<string, any>
+  causationId?: string | null
+  correlationId?: string | null
+  actorId?: string | null
+  streamId: string          // The stream instance ID
+  streamType: string        // The aggregate root type name
+  streamVersion: number     // Version within the stream
+  createdAt: Date           // Timestamp of persistence
+}
+```
