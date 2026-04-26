@@ -1,6 +1,6 @@
 {
   "name": "@requence/event-sourcing",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "Event sourcing primitives — aggregate roots, projections, process managers, and event listeners",
   "type": "module",
   "sideEffects": false,
@@ -83,7 +83,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/requence/event-sourcing"
+    "url": "git+https://github.com/requence/event-sourcing.git"
   },
   "publishConfig": {
     "access": "public"
