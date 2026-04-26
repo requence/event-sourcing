@@ -3,6 +3,9 @@ name: Release
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - ".github/**"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -19,13 +22,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
       - name: Setup Node (for npm publish)
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"

@@ -19,6 +19,8 @@ RUN bun run build
 # ── Stage 3: Serve with nginx ────────────────────────────────────────
 FROM nginx:alpine AS runtime
 
+RUN apk add --no-cache curl
+
 COPY --from=build /app/dist /usr/share/nginx/html
 
 # SPA-friendly fallback & caching
@@ -43,6 +45,6 @@ server {
 EOF
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=10s \
-  CMD wget --spider -q http://localhost:80 || exit 1
+  CMD curl -f http://localhost/ || exit 1
 
 EXPOSE 80
