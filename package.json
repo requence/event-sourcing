@@ -31,6 +31,12 @@
       "types": "./dist/memory/index.d.ts",
       "import": "./dist/memory/index.js",
       "default": "./dist/memory/index.js"
+    },
+    "./redis": {
+      "bun": "./src/redis/index.ts",
+      "types": "./dist/redis/index.d.ts",
+      "import": "./dist/redis/index.js",
+      "default": "./dist/redis/index.js"
     }
   },
   "files": [

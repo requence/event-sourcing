@@ -31,13 +31,50 @@ The function accepts a single configuration object:
 | `appendEvents` | `AppendEvents` | ✓ | Function that persists new events and returns them with assigned positions. |
 | `aggregateRoots` | `Root[]` | ✓ | Array of aggregate root instances to register. |
 | `checkpoint` | `CheckpointMethods` | ✓ | Methods for persisting projection/process manager checkpoints. |
-| `lock` | `LockCreator` | | Custom locking strategy. Defaults to an in-memory lock with a 5-second timeout. |
+| `lock` | `LockCreator` | | Custom locking strategy for aggregate root streams. Defaults to an in-memory lock with a 5-second TTL. Use `redisLock` from `@requence/event-sourcing/redis` for distributed deployments. |
 | `aggregateRootSnapshot` | `AggregateRootSnapshotMethods` | | Enables snapshot support for aggregate roots. |
 | `projectionSnapshot` | `ProjectionSnapshotMethods` | | Enables snapshot support for projections. |
 | `postProcessEvent` | `(event, aggregateRoot) => WrappedEvent` | | Hook to mutate or decorate events before they are appended. |
 | `onProjectionReplay` | `OnProgress` | | Callbacks for tracking projection replay progress. |
 | `onProcessManagerRefresh` | `OnProgress` | | Callbacks for tracking process manager refresh progress. |
 | `autoInit` | `boolean` | | When set to `false`, the event store will not initialize automatically. You must call `.init()` manually. Defaults to `true`. |
+
+## Concurrency & Locking
+
+Aggregate root streams are **automatically locked** before any command is executed. This prevents concurrent modifications to the same stream and eliminates event stream version collisions.
+
+By default, the library uses an **in-memory mutex** (via `async-mutex`) with a 5-second TTL. This is suitable for single-process deployments.
+
+### Distributed Locking with `redisLock`
+
+For multi-instance deployments, pass `redisLock` as the `lock` parameter to coordinate across all instances via Redis:
+
+```typescript
+import { createEventStore } from '@requence/event-sourcing/drizzle'
+import { redisLock } from '@requence/event-sourcing/redis'
+import Redis from 'ioredis'
+
+const redis = new Redis(process.env.REDIS_URL)
+
+const eventStore = createEventStore({
+  database: db,
+  aggregateRoots: [user, project],
+  lock: redisLock(redis),       // distributed lock via Redis
+})
+```
+
+#### `redisLock(client, defaultTtl?)`
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `client` | `Redis` (ioredis) | — | An ioredis client instance. |
+| `defaultTtl` | `number` | `5000` | Lock time-to-live in milliseconds. |
+
+The implementation uses atomic `SET NX PX` for acquisition and Lua scripts for safe extend/release, preventing split-brain issues.
+
+<Aside type="tip">
+  The default in-memory lock is ideal for testing and single-process apps. Switch to `redisLock` when running multiple server instances.
+</Aside>
 
 ## Return Value
 

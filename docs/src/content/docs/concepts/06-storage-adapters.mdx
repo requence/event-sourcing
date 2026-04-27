@@ -131,12 +131,20 @@ import {
 ### Configuration
 
 ```typescript
+import { redisLock } from '@requence/event-sourcing/redis'
+import Redis from 'ioredis'
+
+const redis = new Redis(process.env.REDIS_URL)
+
 const eventStore = createEventStore({
   // Required — Drizzle database instance or factory
   database: db,
 
   // Required — one or more aggregate roots
   aggregateRoots: [user, project],
+
+  // Optional — distributed lock for multi-instance deployments
+  lock: redisLock(redis),
 
   // Optional — disable automatic initialization
   autoInit: false,

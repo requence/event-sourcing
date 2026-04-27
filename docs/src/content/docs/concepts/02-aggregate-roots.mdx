@@ -3,6 +3,8 @@ title: Aggregate Roots
 description: Learn how to define and use Aggregate Roots.
 ---
 
+import { Aside } from '@astrojs/starlight/components';
+
 ## What is an Aggregate Root?
 
 An **Aggregate Root** is a core concept from Domain-Driven Design (DDD). It acts as a consistency boundary around a set of entities and value objects. In the context of Event Sourcing, the Aggregate Root is responsible for:
@@ -94,6 +96,45 @@ export default createAggregateRoot('project')
 - **Event handlers** follow the naming convention `on<EventName>` (e.g., `onProjectCreated`).
 - **Commands** return the result of calling `event(EventName, payload)`. Return `undefined` (or nothing) to perform a no-op if no state change is needed.
 - For events with no payload, define the schema as `z.null()` and call `event('EventName')` without a second argument.
+
+## Concurrency & Locking
+
+Every time you call `newStream()` or `loadStream(id)`, the library **automatically acquires a lock** on that specific stream before any commands are executed. This prevents simultaneous edits to the same aggregate instance and eliminates event stream version collisions (`ConcurrencyError`).
+
+The lock is held for the duration of the command chain and released after the events have been appended. If no commands are issued, the lock is released immediately.
+
+### How It Works
+
+1. **Lock acquired** — Before any command runs, a mutex is acquired for the stream key (`<type>:<id>`).
+2. **Commands execute** — All chained commands run sequentially against the locked stream.
+3. **Events appended** — The resulting events are persisted with the expected version.
+4. **Lock released** — The lock is released after persistence (or on error).
+
+By default, the library uses an **in-memory lock** backed by `async-mutex` with a 5-second TTL. This is safe for single-process deployments but **does not protect across multiple instances**.
+
+### Distributed Locking with Redis
+
+For multi-instance deployments (e.g. behind a load balancer), use `redisLock` to coordinate locks across all instances via Redis:
+
+```typescript
+import { createEventStore } from '@requence/event-sourcing/drizzle'
+import { redisLock } from '@requence/event-sourcing/redis'
+import Redis from 'ioredis'
+
+const redis = new Redis(process.env.REDIS_URL)
+
+const eventStore = createEventStore({
+  database: db,
+  aggregateRoots: [project, user],
+  lock: redisLock(redis),
+})
+```
+
+`redisLock` uses atomic Redis `SET NX PX` commands and Lua scripts for safe extend/release, ensuring no two instances can modify the same stream concurrently.
+
+<Aside type="tip">
+  The default in-memory lock is perfect for testing and single-process apps. Switch to `redisLock` when deploying multiple instances to avoid version conflicts.
+</Aside>
 
 ## Using the Aggregate Root
 

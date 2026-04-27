@@ -5,7 +5,7 @@ description: API reference for the createAggregateRoot function — a fluent bui
 
 import { Aside } from '@astrojs/starlight/components';
 
-`createAggregateRoot` defines a domain entity — its events, state, business rules, and commands — using a type-safe fluent builder API. Aggregate roots are the primary write-side primitive: they enforce invariants and emit events.
+`createAggregateRoot` defines a domain entity — its events, state, business rules, and commands — using a type-safe fluent builder API. Aggregate roots are the primary write-side primitive: they enforce invariants and emit events. Every stream is **automatically locked** during command execution to prevent concurrent modifications and version collisions — see [Concurrency & Locking](/concepts/02-aggregate-roots/#concurrency--locking).
 
 ## Import
 

@@ -7,6 +7,8 @@ Build resilient, auditable systems by storing every state change as an immutable
 ## Features
 
 - **Aggregate Roots** — define your domain model with events, business rules, and commands using a fluent builder API.
+- **Automatic Concurrency Control** — aggregate root streams are automatically locked to prevent simultaneous edits and event stream version collisions.
+- **Distributed Locking** — use `redisLock` for multi-instance deployments to coordinate locks across processes via Redis.
 - **Projections** — build query-optimized read models from events, with full replay support.
 - **Process Managers** — coordinate workflows across multiple aggregates.
 - **Event Listeners** — react to events with lightweight, stateless side effects.
