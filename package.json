@@ -1,6 +1,6 @@
 {
   "name": "@requence/event-sourcing",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Event sourcing primitives — aggregate roots, projections, process managers, and event listeners",
   "type": "module",
   "sideEffects": false,
