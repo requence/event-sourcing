@@ -1,5 +1,11 @@
 # @requence/event-sourcing
 
+## 1.0.2
+
+### Patch Changes
+
+- [`aeb1ddf`](https://github.com/requence/event-sourcing/commit/aeb1ddfdb8e78f09c7ef5fc36ef71e1f29e19194) Thanks [@Torsten85](https://github.com/Torsten85)! - ensure process manager state is not stale in a multi instance environment
+
 ## 1.0.1
 
 ### Patch Changes
