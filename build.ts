@@ -1,5 +1,5 @@
-import { readdir, rm, mkdir } from 'node:fs/promises'
-import { join, relative, dirname } from 'node:path'
+import { mkdir, readdir, rm } from 'node:fs/promises'
+import { join } from 'node:path'
 
 const SRC = './src'
 const OUT = './dist'
@@ -10,7 +10,9 @@ async function collectEntrypoints(dir: string): Promise<string[]> {
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     const fullPath = join(dir, entry.name)
     if (entry.isDirectory()) {
-      if (entry.name === 'tests') continue
+      if (entry.name === 'tests') {
+        continue
+      }
       entries.push(...(await collectEntrypoints(fullPath)))
     } else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.spec.ts')) {
       entries.push(fullPath)
