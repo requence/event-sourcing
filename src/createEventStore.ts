@@ -173,22 +173,34 @@ export function createEventStore<const Root extends AnyAggregateRoot>(
   let exclusiveEmitEventsChain: Promise<any> = Promise.resolve()
   const emitEvents: EmitEvents = async (events) => {
     exclusiveEmitEventsChain = exclusiveEmitEventsChain.then(async () => {
-      for (const event of events) {
-        await Promise.all(
-          [
-            ...processManagers.values(),
-            ...projections.values(),
-            ...eventListeners.values(),
-          ].map((listener) => listener.apply(event)),
-        )
-      }
+      await Promise.all(
+        processManagers
+          .values()
+          .map((pm) => pm.beginSession()),
+      )
 
-      for (const event of events) {
-        await Promise.all(
-          [...processManagers.values(), ...eventListeners.values()].map(
-            (processManager) => processManager.applyAfter(event),
-          ),
-        )
+      try {
+        for (const event of events) {
+          await Promise.all(
+            [
+              ...processManagers.values(),
+              ...projections.values(),
+              ...eventListeners.values(),
+            ].map((listener) => listener.apply(event)),
+          )
+        }
+
+        for (const event of events) {
+          await Promise.all(
+            [...processManagers.values(), ...eventListeners.values()].map(
+              (processManager) => processManager.applyAfter(event),
+            ),
+          )
+        }
+      } finally {
+        for (const pm of processManagers.values()) {
+          pm.endSession()
+        }
       }
     })
 

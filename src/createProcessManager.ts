@@ -54,6 +54,8 @@ type ProcessManagerAfterEffectHandlers<Events extends EventTemplate> =
 export type InternalProcessManager = {
   apply: (event: BaseOutputEvent) => Promise<void>
   applyAfter: (event: BaseOutputEvent) => Promise<void>
+  beginSession: () => Promise<void>
+  endSession: () => void
   setRelatedStreamEvents: (
     generateRelatedStreamEvents: (
       eventHandlers: EventHandlers<EventTemplate>,
@@ -139,6 +141,7 @@ export function buildProcessManagerCreator(params: {
     let state: any = null
     let initialState: any = null
     let exclusive = true
+    let sessionActive = false
     let generateRelatedStreamEvents: (
       eventHandlers: EventHandlers<any>,
     ) => StreamEvents[]
@@ -238,6 +241,26 @@ export function buildProcessManagerCreator(params: {
       async isReady() {
         await hydrated
       },
+      async beginSession() {
+        if (!hasState) return
+        const checkpoint = await params.checkpoint.get(
+          'processManager',
+          name,
+        )
+        if (checkpoint) {
+          state = checkpoint.metadata?.state ?? clone(initialState)
+          lastEventPosition = checkpoint.lastEventPosition
+        } else {
+          state = clone(initialState)
+          lastEventPosition = -1
+        }
+        sessionActive = true
+      },
+      endSession() {
+        if (!hasState) return
+        state = null
+        sessionActive = false
+      },
       async apply(event) {
         await apply(event, false)
       },
@@ -302,6 +325,13 @@ export function buildProcessManagerCreator(params: {
       },
       async state() {
         await hydrated
+        if (!sessionActive && hasState) {
+          const checkpoint = await params.checkpoint.get(
+            'processManager',
+            name,
+          )
+          return checkpoint?.metadata?.state ?? clone(initialState)
+        }
         return state
       },
       async init(catchUp) {
@@ -337,6 +367,10 @@ export function buildProcessManagerCreator(params: {
             state = metadata.state ?? state
           },
         })
+
+        // Release state after hydration — it will be loaded
+        // from the checkpoint on the next beginSession call
+        state = null
 
         resolveHydrated()
       },
