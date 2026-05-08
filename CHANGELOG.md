@@ -1,5 +1,11 @@
 # @requence/event-sourcing
 
+## 1.0.3
+
+### Patch Changes
+
+- [`7cbe65b`](https://github.com/requence/event-sourcing/commit/7cbe65b7c0c3aca052173ee4271fe6cc368f8593) Thanks [@Torsten85](https://github.com/Torsten85)! - widen database typing in drizzle adapter
+
 ## 1.0.2
 
 ### Patch Changes
