@@ -1,5 +1,13 @@
 # @requence/event-sourcing
 
+## 1.0.2
+
+### Patch Changes
+
+- [`aeb1ddf`](https://github.com/requence/event-sourcing/commit/aeb1ddfdb8e78f09c7ef5fc36ef71e1f29e19194) Thanks [@Torsten85](https://github.com/Torsten85)! - ensure process manager state is not stale in a multi instance environment
+
+- [`8bb7f8f`](https://github.com/requence/event-sourcing/commit/8bb7f8f6867937b930e9796c2735f448f24a5f51) Thanks [@Torsten85](https://github.com/Torsten85)! - fixed typing issue with utility types
+
 ## 1.0.1
 
 ### Patch Changes
