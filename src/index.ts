@@ -3,7 +3,7 @@ import type {
   StreamEvents,
   StreamId,
   StreamIdEvents,
-} from './utilityTypes.d.ts'
+} from './utilityTypes.ts'
 
 export { createEventStore } from './createEventStore.ts'
 export type { BaseOutputEvent as Event } from './utilityTypes.d.ts'

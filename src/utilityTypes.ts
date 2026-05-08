@@ -4,19 +4,19 @@ export type Prettify<T> = {
   [K in keyof T]: T[K]
 } & {}
 
-interface Stream {
+export interface Stream {
   stream: string
 }
 
-interface StreamEvents extends Stream {
+export interface StreamEvents extends Stream {
   events: string[]
 }
 
-interface StreamId extends Stream {
+export interface StreamId extends Stream {
   id: string
 }
 
-interface StreamIdEvents extends StreamEvents {
+export interface StreamIdEvents extends StreamEvents {
   id: string
 }
 

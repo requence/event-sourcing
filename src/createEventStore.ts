@@ -35,7 +35,7 @@ import type {
   StreamEvents,
   StreamId,
   StreamIdEvents,
-} from './utilityTypes.js'
+} from './utilityTypes.ts'
 import {
   type WrappedEvent,
   unwrapEvent,
@@ -173,11 +173,7 @@ export function createEventStore<const Root extends AnyAggregateRoot>(
   let exclusiveEmitEventsChain: Promise<any> = Promise.resolve()
   const emitEvents: EmitEvents = async (events) => {
     exclusiveEmitEventsChain = exclusiveEmitEventsChain.then(async () => {
-      await Promise.all(
-        processManagers
-          .values()
-          .map((pm) => pm.beginSession()),
-      )
+      await Promise.all(processManagers.values().map((pm) => pm.beginSession()))
 
       try {
         for (const event of events) {

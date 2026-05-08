@@ -6,7 +6,7 @@ import type {
   BaseOutputEvent,
   MaybePromise,
   StreamEvents,
-} from './utilityTypes.js'
+} from './utilityTypes.ts'
 
 const checkpointSchema = z.object({
   lastEventPosition: z.int(),
