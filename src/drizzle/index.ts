@@ -9,7 +9,7 @@ import {
   lte,
   sql,
 } from 'drizzle-orm'
-import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
+import type { PgDatabase } from 'drizzle-orm/pg-core'
 
 import type { AnyAggregateRoot } from '../createAggregateRoot.ts'
 import {
@@ -46,7 +46,7 @@ export type OnEventsAppendend = (
 ) => MaybePromise<void>
 
 interface DrizzleEventStoreParams<Root extends AnyAggregateRoot> {
-  database: NodePgDatabase<any> | (() => NodePgDatabase<any>)
+  database: PgDatabase<any, any> | (() => PgDatabase<any, any>)
   aggregateRoots: Root[]
   autoInit?: boolean
   postProcessEvent?: EventStoreParamsWithAggregateRootSnapshots<Root>['postProcessEvent']
@@ -74,7 +74,7 @@ function isPgUniqueViolation(
   return true
 }
 
-function createEventsQuery(database: NodePgDatabase<any>) {
+function createEventsQuery(database: PgDatabase<any, any>) {
   return database
     .select({
       position: events.position,
@@ -98,7 +98,7 @@ function createEventsQuery(database: NodePgDatabase<any>) {
 type EventsQuery = ReturnType<typeof createEventsQuery>
 
 export async function fetchEvents<E extends OutputEvent<any> = BaseOutputEvent>(
-  database: NodePgDatabase<any>,
+  database: PgDatabase<any, any>,
   modifyQuery: (query: EventsQuery, table: typeof events) => EventsQuery = (
     q,
   ) => q,
