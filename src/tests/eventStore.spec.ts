@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 
+import { ConcurrencyError } from '../index.ts'
 import { createUserAggregate, setupEventStore } from './setup.ts'
 
 describe('Event Store', () => {
@@ -65,6 +66,33 @@ describe('Event Store', () => {
       age: 41,
     })
     expect(knowsUser).toBeTrue()
+  })
+
+  it('does not poison unrelated writes when one append fails', async () => {
+    const usersAggregate = createUserAggregate()
+    const { eventStore, pseudoEventStore } = setupEventStore(usersAggregate)
+    await eventStore.init()
+
+    const userA = crypto.randomUUID()
+    const userB = crypto.randomUUID()
+
+    // First create succeeds → stream A is now at version 1.
+    await usersAggregate.loadStream(userA).create('A').settled()
+
+    // A duplicate create builds a fresh stream at expected version 0, but the
+    // store is at version 1 → ConcurrencyError (the Tillhub-duplicate scenario).
+    await expect(
+      usersAggregate.newStream(userA).create('A duplicate').settled(),
+    ).rejects.toBeInstanceOf(ConcurrencyError)
+
+    // An unrelated stream must still be writable. Before the fix, the shared
+    // append chain was left in a rejected state by the failure above, so this
+    // write re-propagated stream A's stale ConcurrencyError instead of running.
+    await usersAggregate.newStream(userB).create('B').settled()
+
+    expect(
+      pseudoEventStore.some((e) => e.streamId === userB),
+    ).toBeTrue()
   })
 
   it('throws on interaction with posponed init', async () => {

@@ -172,7 +172,7 @@ export function createEventStore<const Root extends AnyAggregateRoot>(
 
   let exclusiveEmitEventsChain: Promise<any> = Promise.resolve()
   const emitEvents: EmitEvents = async (events) => {
-    exclusiveEmitEventsChain = exclusiveEmitEventsChain.then(async () => {
+    const result = exclusiveEmitEventsChain.then(async () => {
       await Promise.all(processManagers.values().map((pm) => pm.beginSession()))
 
       try {
@@ -200,7 +200,16 @@ export function createEventStore<const Root extends AnyAggregateRoot>(
       }
     })
 
-    return exclusiveEmitEventsChain
+    // Advance the serialization chain but swallow this operation's outcome so a
+    // rejection is delivered only to its own caller. Chaining the next op onto a
+    // rejected promise would skip its callback and re-propagate the stale error,
+    // permanently poisoning every subsequent emit for the life of the process.
+    exclusiveEmitEventsChain = result.then(
+      () => undefined,
+      () => undefined,
+    )
+
+    return result
   }
 
   const loadEvents: LoadEvents = (select, range) => {
@@ -215,7 +224,7 @@ export function createEventStore<const Root extends AnyAggregateRoot>(
     expectedVersion,
   ) => {
     assertInitializing()
-    exclusiveAppendEventsChain = exclusiveAppendEventsChain.then(async () => {
+    const result = exclusiveAppendEventsChain.then(async () => {
       if (events.length === 0) {
         return []
       }
@@ -241,7 +250,17 @@ export function createEventStore<const Root extends AnyAggregateRoot>(
       return params.appendEvents(streamId, processedEvents, expectedVersion)
     })
 
-    return exclusiveAppendEventsChain
+    // Advance the serialization chain but swallow this operation's outcome so a
+    // rejection is delivered only to its own caller. Chaining the next append
+    // onto a rejected promise would skip its callback and re-propagate the stale
+    // error, permanently poisoning every subsequent append for the life of the
+    // process (a single ConcurrencyError would take down all writes).
+    exclusiveAppendEventsChain = result.then(
+      () => undefined,
+      () => undefined,
+    )
+
+    return result
   }
 
   for (const aggregateRoot of params.aggregateRoots as unknown as InternalAggregateRootApi[]) {
