@@ -1,5 +1,16 @@
 # @requence/event-sourcing
 
+## 1.0.4
+
+### Patch Changes
+
+- [`72a4bfe`](https://github.com/requence/event-sourcing/commit/72a4bfea751080deae97842831b399e4b5de7958) Thanks [@Torsten85](https://github.com/Torsten85)! - Prevent a single failed append or event emission from permanently poisoning
+  all subsequent operations. The shared serialization chains for `appendEvents`
+  and `emitEvents` previously re-propagated a rejection to every following
+  operation, so one error (e.g. a `ConcurrencyError`) could surface on unrelated
+  streams and take down the whole process. Each operation's outcome is now
+  isolated to its own caller while preserving ordering.
+
 ## 1.0.3
 
 ### Patch Changes
