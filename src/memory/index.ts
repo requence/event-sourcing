@@ -15,6 +15,7 @@ import type {
   EventsFromRoot,
   OnProgress,
 } from '../createEventStore.ts'
+import type { LockCreator } from '../lock.ts'
 import type { BaseOutputEvent, MaybePromise } from '../utilityTypes.js'
 
 export { createAggregateRoot } from '../index.ts'
@@ -26,6 +27,7 @@ export type OnEventsAppended = (
 interface MemoryEventStoreParams<Root extends AnyAggregateRoot> {
   aggregateRoots: Root[]
   autoInit?: boolean
+  lock?: LockCreator
   postProcessEvent?: EventStoreParamsWithAggregateRootSnapshots<Root>['postProcessEvent']
   onProjectionReplay?: OnProgress
   onProcessManagerRefresh?: OnProgress
@@ -39,6 +41,7 @@ export function createEventStore<const Root extends AnyAggregateRoot>({
   onProcessManagerRefresh,
   onEventsAppended,
   autoInit,
+  lock,
 }: MemoryEventStoreParams<Root>): EventStore<
   EventsFromRoot<Root>,
   Root,
@@ -56,6 +59,7 @@ export function createEventStore<const Root extends AnyAggregateRoot>({
     onProjectionReplay,
     onProcessManagerRefresh,
     autoInit,
+    lock,
 
     async *loadEvents(select, range) {
       let streamTypes: string[] | null = null

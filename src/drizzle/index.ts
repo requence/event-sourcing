@@ -31,6 +31,7 @@ import type {
   EventsFromRoot,
   OnProgress,
 } from '../createEventStore.ts'
+import type { LockCreator } from '../lock.ts'
 import { superjson } from '../superjson.ts'
 import type {
   BaseOutputEvent,
@@ -49,6 +50,7 @@ interface DrizzleEventStoreParams<Root extends AnyAggregateRoot> {
   database: PgDatabase<any, any> | (() => PgDatabase<any, any>)
   aggregateRoots: Root[]
   autoInit?: boolean
+  lock?: LockCreator
   postProcessEvent?: EventStoreParamsWithAggregateRootSnapshots<Root>['postProcessEvent']
   onProjectionReplay?: OnProgress
   onProcessManagerRefresh?: OnProgress
@@ -120,6 +122,7 @@ export function createEventStore<const Root extends AnyAggregateRoot>({
   onProcessManagerRefresh,
   onEventsAppended,
   autoInit,
+  lock,
 }: DrizzleEventStoreParams<Root>): EventStore<
   EventsFromRoot<Root>,
   Root,
@@ -133,6 +136,7 @@ export function createEventStore<const Root extends AnyAggregateRoot>({
     onProjectionReplay,
     onProcessManagerRefresh,
     autoInit,
+    lock,
     async *loadEvents(select, range) {
       const conditions = [] as SQL[]
 
