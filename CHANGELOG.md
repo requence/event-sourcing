@@ -1,5 +1,17 @@
 # @requence/event-sourcing
 
+## 1.2.0
+
+### Minor Changes
+
+- [`7ed5770`](https://github.com/requence/event-sourcing/commit/7ed5770c29e16c346ff0890d8bda4c3681719b42) Thanks [@Torsten85](https://github.com/Torsten85)! - Expose the global log `position` on events passed to aggregate root event
+  handlers. The runtime always delivered it when folding persisted events during
+  stream loading and replay, but the handler type omitted it. It is typed as
+  optional because events yielded by a command fold before they are appended and
+  therefore have no position yet. This lets aggregates capture log positions in
+  their state (e.g. the position of a delete event, to later reconstruct the
+  dependency picture as it was just before the deletion).
+
 ## 1.1.1
 
 ### Patch Changes
