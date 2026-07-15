@@ -1,5 +1,15 @@
 # @requence/event-sourcing
 
+## 1.1.1
+
+### Patch Changes
+
+- [`33fba96`](https://github.com/requence/event-sourcing/commit/33fba96b4f2b639f582d182e626b022b8e2aa7b1) Thanks [@Torsten85](https://github.com/Torsten85)! - Forward the `lock` option through the drizzle and memory adapter wrappers to
+  the core event store. The option was documented (e.g. `redisLock` for
+  multi-instance deployments) but both adapters silently dropped it, so custom
+  locking strategies never took effect and the default in-memory lock was always
+  used.
+
 ## 1.1.0
 
 ### Minor Changes
