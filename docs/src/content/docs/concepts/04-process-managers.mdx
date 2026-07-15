@@ -131,6 +131,12 @@ Both `withEventHandlers` and `withAfterEffects` handlers receive a second argume
 })
 ```
 
+## Multiple Instances
+
+Stateful process managers persist their folded state to a shared checkpoint, which is reloaded at the start of every processing session. When several instances process events for the same process manager at once, checkpoint writes use **optimistic concurrency**: a write that races against another instance is rejected, the latest state is reloaded, and the event is re-folded on top of it — so simultaneous updates are never silently lost.
+
+This makes commutative folds (counters, running totals, sets) safe to scale horizontally. For folds that must be strictly ordered or exactly-once across the entire event log, run stateful process managers on a **single dedicated worker**, since each instance only folds the events it appends and events are processed out of global order across instances. See [Running Multiple Instances](/reference/01-create-event-store/#running-multiple-instances) for the full topology guide.
+
 ## Infinite Loop Protection
 
 The library includes built-in infinite loop detection. If a process manager listens to an event and then emits the exact same event (same type, same stream, same payload), the library will throw an `InfiniteLoopError` to prevent runaway event cycles.

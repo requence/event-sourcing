@@ -14,6 +14,18 @@ export class ConcurrencyError extends Error {
   }
 }
 
+export class CheckpointConcurrencyError extends Error {
+  constructor(
+    public readonly checkpointType: 'projection' | 'processManager',
+    public readonly name: string,
+    public readonly expectedVersion: number | null,
+  ) {
+    super(
+      `Concurrency error on ${checkpointType} checkpoint "${name}": expected version ${expectedVersion}, but it was modified by another writer`,
+    )
+  }
+}
+
 export class ValidationError extends Error {
   constructor(
     message: string,

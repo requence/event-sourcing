@@ -142,7 +142,7 @@ export function setupEventStore<const Root extends AnyAggregateRoot>(
           }
         }
       },
-      upsert(checkpoint) {
+      upsert(checkpoint, expectedVersion) {
         let persistedCheckpoint: Checkpoint | undefined
         for (const c of pseudoCheckpointStore) {
           if (c.type === checkpoint.type && c.name === checkpoint.name) {
@@ -152,10 +152,20 @@ export function setupEventStore<const Root extends AnyAggregateRoot>(
         }
 
         if (persistedCheckpoint) {
+          if (
+            expectedVersion === null ||
+            persistedCheckpoint.version !== expectedVersion
+          ) {
+            return false
+          }
           persistedCheckpoint.lastEventPosition = checkpoint.lastEventPosition
+          persistedCheckpoint.metadata = checkpoint.metadata
+          persistedCheckpoint.version = checkpoint.version
         } else {
-          pseudoCheckpointStore.add(checkpoint)
+          pseudoCheckpointStore.add({ ...checkpoint })
         }
+
+        return true
       },
       delete(type, name) {
         for (const checkpoint of pseudoCheckpointStore) {

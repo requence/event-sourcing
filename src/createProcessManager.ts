@@ -7,6 +7,7 @@ import {
 } from './createCheckpointApi.ts'
 import type { LoadEvents, OnProgress } from './createEventStore.ts'
 import {
+  CheckpointConcurrencyError,
   ProcessManagerEventHandlerExecutionError,
   RefreshingSkipError,
 } from './errors.ts'
@@ -180,39 +181,75 @@ export function buildProcessManagerCreator(params: {
       const runner = (async () => {
         await unlocked
         const refreshing = isRefreshing()
-        await withProcessManagerInfo(
-          {
-            name,
-            event,
-          },
-          async () => {
-            try {
-              await handler(event, { refreshing })
-            } catch (error) {
-              if (error instanceof RefreshingSkipError) {
-                if (refreshing) {
-                  return
+        // Fold state into the process-manager checkpoint with optimistic
+        // concurrency control. Only the stateful `on<Event>` fold needs
+        // compare-and-swap — after-effects and stateless managers persist a
+        // plain cursor, which is safe to write monotonically. When a concurrent
+        // instance advances the checkpoint between our read and write, reload
+        // the latest state and re-apply this event on top of it.
+        const useCas = hasState && !after && !hydrating && !refreshing
+        while (true) {
+          const currentHandler = after
+            ? createAfterEffects(state)[`after${event.type}`]
+            : createEventHandlers(state)[`on${event.type}`]
+          await withProcessManagerInfo(
+            {
+              name,
+              event,
+            },
+            async () => {
+              try {
+                await currentHandler!(event, { refreshing })
+              } catch (error) {
+                if (error instanceof RefreshingSkipError) {
+                  if (refreshing) {
+                    return
+                  }
+
+                  throw new Error(
+                    'RefreshingSkipError should never be thrown outside refresh',
+                  )
                 }
 
-                throw new Error(
-                  'RefreshingSkipError should never be thrown outside refresh',
+                if (!(error instanceof Error)) {
+                  throw error
+                }
+
+                throw new ProcessManagerEventHandlerExecutionError(
+                  name,
+                  after ? `after${event.type}` : `on${event.type}`,
+                  event,
+                  error,
                 )
               }
+            },
+          )
 
-              if (!(error instanceof Error)) {
-                throw error
-              }
-
-              throw new ProcessManagerEventHandlerExecutionError(
-                name,
-                after ? `after${event.type}` : `on${event.type}`,
-                event,
-                error,
-              )
+          try {
+            await checkpointApi.upsert(
+              event,
+              { state },
+              useCas ? 'cas' : 'monotonic',
+            )
+            break
+          } catch (error) {
+            if (!(error instanceof CheckpointConcurrencyError)) {
+              throw error
             }
-          },
-        )
-        await checkpointApi.upsert(event, { state })
+
+            // A concurrent writer advanced the checkpoint. Reload the latest
+            // folded state (and version) and re-apply this event on top of it.
+            // This event is emitted only by this instance, so it is never
+            // already part of the reloaded state — we must always re-fold it
+            // (do not skip on position: events are processed out of global
+            // order across instances).
+            const checkpoint = await checkpointApi.load()
+            state =
+              checkpoint?.metadata?.state != null
+                ? clone(checkpoint.metadata.state)
+                : clone(initialState)
+          }
+        }
       })()
 
       if (exclusive) {
@@ -243,12 +280,14 @@ export function buildProcessManagerCreator(params: {
       },
       async beginSession() {
         if (!hasState) return
-        const checkpoint = await params.checkpoint.get(
-          'processManager',
-          name,
-        )
+        // Load through the checkpoint API so the local version is synced with
+        // the store; the subsequent fold relies on it for compare-and-swap.
+        const checkpoint = await checkpointApi.load()
         if (checkpoint) {
-          state = checkpoint.metadata?.state ?? clone(initialState)
+          state =
+            checkpoint.metadata?.state != null
+              ? clone(checkpoint.metadata.state)
+              : clone(initialState)
           lastEventPosition = checkpoint.lastEventPosition
         } else {
           state = clone(initialState)

@@ -139,7 +139,7 @@ export function createEventStore<const Root extends AnyAggregateRoot>({
           }
         }
       },
-      upsert(checkpoint) {
+      upsert(checkpoint, expectedVersion) {
         let persisted: Checkpoint | undefined
         for (const c of checkpoints) {
           if (c.type === checkpoint.type && c.name === checkpoint.name) {
@@ -149,11 +149,19 @@ export function createEventStore<const Root extends AnyAggregateRoot>({
         }
 
         if (persisted) {
+          // Compare-and-swap: reject the write when another writer advanced the
+          // checkpoint, or when the caller expected to create a fresh one.
+          if (expectedVersion === null || persisted.version !== expectedVersion) {
+            return false
+          }
           persisted.lastEventPosition = checkpoint.lastEventPosition
           persisted.metadata = checkpoint.metadata
+          persisted.version = checkpoint.version
         } else {
-          checkpoints.add(checkpoint)
+          checkpoints.add({ ...checkpoint })
         }
+
+        return true
       },
       delete(type, name) {
         for (const checkpoint of checkpoints) {

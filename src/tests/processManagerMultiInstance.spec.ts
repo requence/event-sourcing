@@ -88,7 +88,7 @@ function createSharedDatabase() {
           if (cp.type === type && cp.name === name) return cp
         }
       },
-      upsert(checkpoint: Checkpoint) {
+      upsert(checkpoint: Checkpoint, expectedVersion: number | null) {
         let persisted: Checkpoint | undefined
         for (const c of checkpoints) {
           if (c.type === checkpoint.type && c.name === checkpoint.name) {
@@ -97,11 +97,20 @@ function createSharedDatabase() {
           }
         }
         if (persisted) {
+          // Optimistic-concurrency guard — reject stale writes.
+          if (
+            expectedVersion === null ||
+            persisted.version !== expectedVersion
+          ) {
+            return false
+          }
           persisted.lastEventPosition = checkpoint.lastEventPosition
           persisted.metadata = checkpoint.metadata
+          persisted.version = checkpoint.version
         } else {
-          checkpoints.add(checkpoint)
+          checkpoints.add({ ...checkpoint })
         }
+        return true
       },
       delete(type: string, name: string) {
         for (const cp of checkpoints) {
@@ -123,6 +132,9 @@ function createInstance(
   sharedDb: ReturnType<typeof createSharedDatabase>,
   opts?: {
     onEventsEmitted?: (events: BaseOutputEvent[]) => MaybePromise<void>
+    // Hook invoked before every checkpoint write — lets a test pause one
+    // instance mid-flight to force a concurrent-write interleaving.
+    beforeCheckpointUpsert?: () => MaybePromise<void>
   },
 ) {
   const aggregate = createAggregateRoot('counters')
@@ -135,6 +147,14 @@ function createInstance(
       },
     }))
 
+  const checkpoint = {
+    ...sharedDb.checkpoint,
+    async upsert(cp: Checkpoint, expectedVersion: number | null) {
+      await opts?.beforeCheckpointUpsert?.()
+      return sharedDb.checkpoint.upsert(cp, expectedVersion)
+    },
+  }
+
   const eventStore = createEventStore({
     aggregateRoots: [aggregate],
     autoInit: false,
@@ -145,7 +165,7 @@ function createInstance(
       return appended
     },
     loadEvents: sharedDb.loadEvents.bind(sharedDb),
-    checkpoint: sharedDb.checkpoint,
+    checkpoint,
   })
 
   return { aggregate, eventStore }
@@ -210,5 +230,68 @@ describe('ProcessManager Multi-Instance', () => {
 
     // Instance A also sees the correct state (loaded from shared checkpoint)
     expect(await pmA.state()).toEqual({ total: 15 })
+  })
+
+  it('does not lose updates when two instances fold state concurrently', async () => {
+    const sharedDb = createSharedDatabase()
+
+    // Gate instance A's checkpoint write so we can deterministically force the
+    // race: A reads the (empty) checkpoint and folds its event, then parks
+    // right before persisting. While it is parked, B reads the same empty
+    // checkpoint, folds its own event and commits. When A is released its write
+    // is now stale — without optimistic concurrency it would clobber B's
+    // update and lose it.
+    const aAtGate = Promise.withResolvers<void>()
+    const releaseA = Promise.withResolvers<void>()
+    let aParked = false
+
+    const instanceA = createInstance(sharedDb, {
+      async beforeCheckpointUpsert() {
+        if (!aParked) {
+          aParked = true
+          aAtGate.resolve()
+          await releaseA.promise
+        }
+      },
+    })
+    const pmA = instanceA.eventStore
+      .createProcessManager('counter-pm')
+      .withState({ total: 0 })
+      .withEventHandlers((state) => ({
+        async onCounterIncremented({ payload }) {
+          state.total += payload.amount
+        },
+      }))
+    await instanceA.eventStore.init()
+    await instanceA.eventStore.isReady()
+
+    const instanceB = createInstance(sharedDb)
+    const pmB = instanceB.eventStore
+      .createProcessManager('counter-pm')
+      .withState({ total: 0 })
+      .withEventHandlers((state) => ({
+        async onCounterIncremented({ payload }) {
+          state.total += payload.amount
+        },
+      }))
+    await instanceB.eventStore.init()
+    await instanceB.eventStore.isReady()
+
+    // A starts processing but parks before persisting its checkpoint.
+    const aSettled = instanceA.aggregate.newStream().increment(10).settled()
+    await aAtGate.promise
+
+    // B reads the still-empty checkpoint and commits { total: 5 }.
+    await instanceB.aggregate.newStream().increment(5).settled()
+
+    // Release A — its stale write must be rejected, forcing it to reload B's
+    // state and re-fold on top of it.
+    releaseA.resolve()
+    await aSettled
+
+    const checkpoint = sharedDb.checkpoint.get('processManager', 'counter-pm')!
+    expect(checkpoint.metadata).toEqual({ state: { total: 15 } })
+    expect(await pmA.state()).toEqual({ total: 15 })
+    expect(await pmB.state()).toEqual({ total: 15 })
   })
 })

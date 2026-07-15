@@ -76,6 +76,34 @@ The implementation uses atomic `SET NX PX` for acquisition and Lua scripts for s
   The default in-memory lock is ideal for testing and single-process apps. Switch to `redisLock` when running multiple server instances.
 </Aside>
 
+## Running Multiple Instances
+
+`redisLock` makes the **write path** safe to scale: any number of instances can accept commands, because stream appends are guarded by both the distributed lock and the storage adapter's optimistic-concurrency check (a `ConcurrencyError` is raised if two instances race on the same stream version).
+
+The **read/reaction path** works differently, and it is important to understand how events reach your handlers when scaling:
+
+- Events are delivered to projections, process managers, and event listeners **only on the instance that appended them**. There is no built-in cross-instance event bus. On startup, each instance also catches up from its checkpoint, but after that it only sees events it writes itself.
+- Because each event is therefore processed by exactly **one** instance, projections and listeners that write to a **shared store** (a SQL read model, Redis, a search index) or perform **idempotent side effects** stay consistent — every event is applied exactly once, with no duplication.
+
+Given that model, the recommended topology is:
+
+| Component | Safe to run on N instances? | Notes |
+|---|---|---|
+| Command / write handlers | ✅ Yes | Use `redisLock`. Concurrency is enforced by the lock + storage adapter. |
+| Projections → shared read model | ✅ Yes | Make writes idempotent (upsert by id). The checkpoint cursor is shared and advances monotonically. |
+| Event listeners (side effects) | ✅ Yes | Each event fires its side effect once, on the writing instance. |
+| Projections holding **in-memory** state | ⚠️ No | Only the writing instance's copy updates. Back the projection with a shared store instead. |
+| Stateful process managers (`.withState()`) | ⚠️ With care | State is folded into a shared checkpoint under optimistic concurrency (see below). |
+| Push delivery (WebSocket/SSE) to connected clients | ⚠️ Needs a bus | Use `onEventsAppended` to fan out to a message broker; the writing instance only reaches its own clients. |
+
+### Stateful process managers across instances
+
+Process-manager state lives in the shared checkpoint and is reloaded at the start of every processing session. When two instances fold events into the same process manager concurrently, writes use **optimistic concurrency**: if another instance advanced the checkpoint in the meantime, the losing write is rejected, the latest state is reloaded, and the event is re-folded on top of it. This prevents lost updates without a lock.
+
+<Aside type="caution">
+  Because each instance only folds the events it appends, and events are processed out of global order across instances, a process manager that advances its checkpoint on one instance can cause another instance to skip an event whose position is below the shared cursor. If your process-manager fold must be strictly ordered or exactly-once across the whole event log, run stateful process managers on a **single dedicated worker**. Commutative folds (counters, sets) and shared-store projections are unaffected.
+</Aside>
+
 ## Return Value
 
 Returns an `EventStore` object with the following methods:

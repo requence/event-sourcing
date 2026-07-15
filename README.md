@@ -8,7 +8,7 @@ Build resilient, auditable systems by storing every state change as an immutable
 
 - **Aggregate Roots** — define your domain model with events, business rules, and commands using a fluent builder API.
 - **Automatic Concurrency Control** — aggregate root streams are automatically locked to prevent simultaneous edits and event stream version collisions.
-- **Distributed Locking** — use `redisLock` for multi-instance deployments to coordinate locks across processes via Redis.
+- **Distributed Locking** — use `redisLock` to make the write path safe across multiple instances. Combined with the storage adapter's optimistic-concurrency checks, stream appends are collision-free even when many instances accept commands. See the [multi-instance guide](https://event-sourcing.docs.requence.cloud/reference/01-create-event-store/#running-multiple-instances) for how projections, listeners, and process managers behave when scaling.
 - **Projections** — build query-optimized read models from events, with full replay support.
 - **Process Managers** — coordinate workflows across multiple aggregates.
 - **Event Listeners** — react to events with lightweight, stateless side effects.

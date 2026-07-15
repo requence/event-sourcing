@@ -99,6 +99,9 @@ export const checkpoints = eventSourcing.table(
     name: text().notNull(),
     lastEventPosition: bigint({ mode: 'number' }).notNull(),
     metadata: text().notNull(),
+    // Optimistic-concurrency guard: bumped on every write so concurrent
+    // instances can detect when they raced on the same checkpoint.
+    version: bigint({ mode: 'number' }).notNull().default(0),
   },
   (table) => [
     unique().on(table.type, table.name),

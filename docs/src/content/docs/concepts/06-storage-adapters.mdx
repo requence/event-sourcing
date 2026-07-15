@@ -111,7 +111,7 @@ The adapter uses a dedicated `event_sourcing` PostgreSQL schema with the followi
 | Table | Purpose |
 |-------|---------|
 | `events` | Append-only event log with position, stream, and metadata |
-| `checkpoints` | Last-processed position per projection/process manager |
+| `checkpoints` | Last-processed position (and optimistic-concurrency `version`) per projection/process manager |
 | `aggregate_root_snapshots` | Cached aggregate state for fast rehydration |
 | `projection_snapshots` | Cached projection state for snapshot-based projections |
 | `projection_applied_events` | Counter for snapshot frequency tracking |

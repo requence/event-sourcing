@@ -258,22 +258,36 @@ export function createEventStore<const Root extends AnyAggregateRoot>({
       }
     },
     checkpoint: {
-      async upsert(checkpoint) {
-        await db()
+      async upsert(checkpoint, expectedVersion) {
+        const metadata = superjson.stringify(checkpoint.metadata)
+        // Compare-and-swap: on an existing row the DO UPDATE only fires when
+        // the stored version still matches `expectedVersion`. A `null`
+        // expectation means "insert only" — if the row already exists the
+        // guard fails and no row is returned, signalling a conflict.
+        const committed = await db()
           .insert(checkpoints)
           .values({
             lastEventPosition: checkpoint.lastEventPosition,
             name: checkpoint.name,
             type: checkpoint.type,
-            metadata: superjson.stringify(checkpoint.metadata),
+            metadata,
+            version: checkpoint.version,
           })
           .onConflictDoUpdate({
             target: [checkpoints.type, checkpoints.name],
             set: {
               lastEventPosition: checkpoint.lastEventPosition,
-              metadata: superjson.stringify(checkpoint.metadata),
+              metadata,
+              version: checkpoint.version,
             },
+            setWhere:
+              expectedVersion === null
+                ? sql`false`
+                : eq(checkpoints.version, expectedVersion),
           })
+          .returning({ version: checkpoints.version })
+
+        return committed.length > 0
       },
       async get(type, name) {
         const [checkpoint] = await db()
@@ -282,6 +296,7 @@ export function createEventStore<const Root extends AnyAggregateRoot>({
             name: checkpoints.name,
             lastEventPosition: checkpoints.lastEventPosition,
             metadata: checkpoints.metadata,
+            version: checkpoints.version,
           })
           .from(checkpoints)
           .where(and(eq(checkpoints.type, type), eq(checkpoints.name, name)))
