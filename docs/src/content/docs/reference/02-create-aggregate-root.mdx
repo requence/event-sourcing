@@ -100,7 +100,7 @@ The callback receives:
 - **`state`** — The mutable state object.
 - **`utils`** — An object with `reset()` and `replayUntil(streamVersion)` helpers.
 
-The event handlers themselves receive an event object with: `type`, `payload`, `version`, `streamId`, and `streamType`.
+The event handlers themselves receive an event object with: `type`, `payload`, `version`, `streamId`, and `streamType`. Persisted events additionally carry their global log `position`; it is `undefined` while folding events that a command just yielded, because they have not been appended yet.
 
 ### `.withCommands(handler)`
 

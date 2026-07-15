@@ -336,6 +336,53 @@ describe('AggregateRoot', () => {
     expect(pseudoEventStore.length).toBe(3)
   })
 
+  it('passes the persisted position to event handlers when loading a stream', async () => {
+    const foldedPositions: (number | undefined)[] = []
+
+    const aggregateRoot = createAggregateRoot('test')
+      .withInitialState({
+        lastDeletePosition: undefined as number | undefined,
+      })
+      .withEvents(({ z }) => ({
+        Created: z.null(),
+        Deleted: z.null(),
+      }))
+      .withEventHandlers((state) => ({
+        onCreated(event) {
+          foldedPositions.push(event.position)
+        },
+        onDeleted(event) {
+          foldedPositions.push(event.position)
+          state.lastDeletePosition = event.position
+        },
+      }))
+      .withCommands((_state, event) => ({
+        create() {
+          return event('Created', null)
+        },
+        remove() {
+          return event('Deleted', null)
+        },
+      }))
+
+    const { pseudoEventStore } = setupEventStore(aggregateRoot)
+
+    const root = await aggregateRoot.newStream().create().remove().settled()
+    // events yielded by commands fold before they are appended — no position yet
+    expect(foldedPositions).toEqual([undefined, undefined])
+    expect((await root.state()).lastDeletePosition).toBeUndefined()
+
+    foldedPositions.length = 0
+    const { streamId } = pseudoEventStore[0]
+    const state = await aggregateRoot.loadStream(streamId).state()
+    // persisted events carry their global log position when folded
+    expect(foldedPositions).toEqual([
+      pseudoEventStore[0].position,
+      pseudoEventStore[1].position,
+    ])
+    expect(state.lastDeletePosition).toBe(pseudoEventStore[1].position)
+  })
+
   it('resolves state before side effects', async () => {
     const aggregateRoot = createAggregateRoot('test')
       .withInitialState({

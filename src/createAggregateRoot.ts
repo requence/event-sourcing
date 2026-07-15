@@ -83,7 +83,12 @@ type InternalEvent<Event extends EventTemplate> = Prettify<
     [K in Event as K['version']]: Omit<
       BaseInternalEvent<K['type'], K['version'], z.output<K['schema']>>,
       'createdAt' | 'position' | 'streamVersion'
-    >
+    > & {
+      // only set when folding persisted events (stream loading/replay);
+      // events yielded by a command fold before they are appended and have
+      // no position yet
+      position?: number
+    }
   }[Event['version']]
 >
 
