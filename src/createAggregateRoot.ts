@@ -512,6 +512,10 @@ export function createAggregateRoot<Name extends string>(type: Name) {
     streamId: string,
     config: CreateStreamConfig = {},
   ) => {
+    // Captured at the dispatch site so a settle() retry can re-apply the
+    // commands within the same AsyncLocalStorage state (user metadata scopes,
+    // process-manager info, …) that the original attempt observed.
+    const dispatchContext = AsyncLocalStorage.snapshot()
     let version = 0
     const snapshotApi = createSnapshotApi?.(
       state,
@@ -791,7 +795,7 @@ export function createAggregateRoot<Name extends string>(type: Name) {
           const parentProcessManager = getProcessManagerInfo()
           if (parentProcessManager) {
             const error = new Error(
-              `aggregateRoot.settled() cannot be called inside a process manager. Attempted on aggregate stream "${type}" within Process Manager ${parentProcessManager.name}.`,
+              `aggregateRoot.settled() cannot be called inside a process manager. Attempted on aggregate stream "${type}" within Process Manager ${parentProcessManager.name}. To configure how dispatched streams settle, pass options to createProcessManager(name, { settled }).`,
             )
             commandChain = commandChain.then(() => error)
             throw error
@@ -799,7 +803,7 @@ export function createAggregateRoot<Name extends string>(type: Name) {
 
           if (transaction.active) {
             const error = new Error(
-              `aggregateRoot.settled() cannot be called inside a transaction. Attempted on aggregate stream "${type}".`,
+              `aggregateRoot.settled() cannot be called inside a transaction. Attempted on aggregate stream "${type}". To configure how dispatched streams settle, pass options to transaction(handler, { settled }).`,
             )
             commandChain = commandChain.then(() => error)
             throw error
@@ -819,12 +823,27 @@ export function createAggregateRoot<Name extends string>(type: Name) {
             if (maxRetries > 0 && error instanceof ConcurrencyError) {
               await releaseLock?.()
 
-              const retryStream = createStream(clone(initialState), streamId, {
-                load: true,
-                filter: config.filter,
-                replayCommands: dispatchedCommands,
-                errorHandlerEntries: Array.from(errorHandlers),
-              })
+              // Re-create the stream within the async context captured at the
+              // dispatch site, so the replayed commands and event
+              // post-processing observe the same AsyncLocalStorage state as
+              // the original attempt. Two scopes are explicitly exited: the
+              // transaction (the first attempt already passed its commit gate;
+              // re-entering the committed store would swallow errors and
+              // register dead delays) and the upstream collection (this retry
+              // is settled right here, not through another auto-settle
+              // registration).
+              const retryStream = dispatchContext(() =>
+                transaction.exit(() =>
+                  downstreamRootsPromiseStore.exit(() =>
+                    createStream(clone(initialState), streamId, {
+                      load: true,
+                      filter: config.filter,
+                      replayCommands: dispatchedCommands,
+                      errorHandlerEntries: Array.from(errorHandlers),
+                    }),
+                  ),
+                ),
+              )
 
               return retryStream.commands.settled({
                 ...options,
@@ -849,8 +868,16 @@ export function createAggregateRoot<Name extends string>(type: Name) {
       },
     }
 
-    registerRootPromiseToUpstream(() => api.commands.settled())
-    transaction.after(() => api.commands.settled())
+    // Streams dispatched inside a process manager or a transaction cannot
+    // call settled() themselves — the surrounding scope settles them when it
+    // completes. Capture the defaults declared on that scope
+    // (createProcessManager / transaction options) so the auto-settle
+    // inherits them.
+    const autoSettleOptions =
+      getProcessManagerInfo()?.settledDefaults ?? transaction.settledDefaults
+
+    registerRootPromiseToUpstream(() => api.commands.settled(autoSettleOptions))
+    transaction.after(() => api.commands.settled(autoSettleOptions))
 
     // Fold existing events before commands run (loadStream, and every retry).
     if (config.load) {

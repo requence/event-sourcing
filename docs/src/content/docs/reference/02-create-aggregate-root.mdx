@@ -197,7 +197,7 @@ All streams expose the following methods alongside the commands defined via `wit
 | `.streamId` | `string` | The unique ID of this stream instance. |
 
 <Aside type="caution">
-  `.settled()` cannot be called inside a process manager or a transaction. Use it only in top-level application code.
+  `.settled()` cannot be called inside a process manager or a transaction — the surrounding scope settles dispatched streams automatically when it completes. To configure those auto-settles, declare defaults on the scope instead: [`createProcessManager(name, { settled })`](/reference/01-create-event-store/#createprocessmanagername-options) or [`transaction(handler, { settled })`](/reference/01-create-event-store/#transactionhandler-options).
 </Aside>
 
 ### Retrying on concurrency conflicts
@@ -217,6 +217,8 @@ await settings.settled({ maxRetries: 5 })
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `maxRetries` | `number` | `0` | Number of reload-and-re-apply attempts after a `ConcurrencyError`. `0` surfaces the error immediately (the default). |
+
+A retry re-applies the commands within the async context captured at the dispatch site, so `AsyncLocalStorage`-based state (request metadata, tenant or branch scopes, …) observed by command handlers and `postProcessEvent` is the same as on the first attempt — even when the retry is triggered later from a different context, such as a process manager's or transaction's auto-settle.
 
 <Aside type="caution">
   Only the append is retried — command handlers are re-run against the reloaded state. They must be **pure functions of loaded state and their arguments**; a handler with side effects (sending mail, calling an external API) would repeat them on each attempt. Leave `maxRetries` at `0` when you *want* the error to surface, such as a fixed-id `newStream(...)` used for idempotent create/dedup.

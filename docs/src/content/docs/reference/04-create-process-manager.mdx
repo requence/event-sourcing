@@ -13,6 +13,16 @@ Process managers are created via `eventStore.createProcessManager(name)`. They c
 const pm = eventStore.createProcessManager('cascade-delete')
 ```
 
+Streams that handlers dispatch commands on are settled automatically when the handler completes — calling `settled()` inside a process manager throws. The optional second parameter declares defaults for those auto-settles, most notably a concurrency retry for unattended writes:
+
+```typescript
+const pm = eventStore.createProcessManager('cascade-delete', {
+  settled: { maxRetries: 3 },
+})
+```
+
+See [Retrying on concurrency conflicts](/reference/02-create-aggregate-root/#retrying-on-concurrency-conflicts) for the retry semantics and the purity requirement it places on the dispatched commands.
+
 ## Builder Methods
 
 ### `.withState(state)`

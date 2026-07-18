@@ -14,6 +14,7 @@ export {
 } from './createProjection.ts'
 export type { Checkpoint } from './createCheckpointApi.ts'
 export {
+  type ProcessManagerOptions,
   isInsideProcessManager,
   getProcessManagerInfo,
 } from './createProcessManager.ts'
@@ -30,6 +31,7 @@ export {
   createAggregateRoot,
 } from './createAggregateRoot.ts'
 
+export type { TransactionOptions } from './transaction.ts'
 export { skipRefreshing } from './refresh.ts'
 export { skipReplay } from './replay.ts'
 

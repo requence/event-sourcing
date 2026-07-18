@@ -1,6 +1,11 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
+import { setTimeout } from 'node:timers/promises'
+
 import { describe, expect, it } from 'bun:test'
 
+import { createAggregateRoot } from '../createAggregateRoot.ts'
 import { createUserAggregate, setupEventStore } from './setup.ts'
+import lock from '../lock.ts'
 import { skipRefreshing } from '../refresh.ts'
 
 describe('ProcessManager', () => {
@@ -181,5 +186,70 @@ describe('ProcessManager', () => {
 
     await eventStore.rebuild()
     expect(called).toBe(1)
+  })
+
+  it('applies settled defaults from options to dispatched streams', async () => {
+    const context = new AsyncLocalStorage<string>()
+
+    const sourceAggregate = createAggregateRoot('sources')
+      .withEvents(({ z }) => ({
+        SourceCreated: z.string(),
+      }))
+      .withCommands((event) => ({
+        create(name: string) {
+          return event('SourceCreated', name)
+        },
+      }))
+
+    const targetAggregate = createAggregateRoot('targets')
+      .withEvents(({ z }) => ({
+        Written: z.string(),
+      }))
+      .withCommands((event) => ({
+        async write(delay: number, name: string) {
+          await setTimeout(delay)
+          return event('Written', `${name}:${context.getStore() ?? 'none'}`)
+        },
+      }))
+
+    const { eventStore, pseudoEventStore } = setupEventStore(
+      [sourceAggregate, targetAggregate],
+      { lock: lock(40) }, // 40ms
+    )
+
+    eventStore
+      .createProcessManager('cascade', { settled: { maxRetries: 3 } })
+      .withEventHandlers({
+        onSourceCreated() {
+          context.run('pm', () => {
+            targetAggregate.loadStream('t').write(100, 'PM')
+          })
+        },
+      })
+
+    // The process manager's write holds the lock on targets:t, but its 100ms
+    // command outlives the 40ms lock TTL, so the direct write slips in and
+    // advances the stream to v1. The process manager's append then loses the
+    // race — without the settled defaults declared above the ConcurrencyError
+    // would surface through the source stream's settled(); with them the
+    // auto-settle reloads and re-applies the command.
+    await Promise.all([
+      sourceAggregate.newStream().create('s').settled(),
+      (async () => {
+        await setTimeout(30)
+        await targetAggregate.loadStream('t').write(5, 'direct').settled()
+      })(),
+    ])
+
+    const persisted = pseudoEventStore.filter(
+      (event) => event.streamType === 'targets',
+    )
+    // 'PM:pm' also proves the retry re-ran the command inside the dispatch
+    // site's async context — the AsyncLocalStorage value survived the retry.
+    expect(persisted.map((event) => event.payload)).toEqual([
+      'direct:none',
+      'PM:pm',
+    ])
+    expect(persisted.map((event) => event.streamVersion)).toEqual([1, 2])
   })
 })

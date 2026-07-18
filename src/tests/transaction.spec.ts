@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { setTimeout } from 'node:timers/promises'
 
 import { describe, expect, it } from 'bun:test'
@@ -6,6 +7,7 @@ import { z } from 'zod/v4'
 import { createAggregateRoot } from '../createAggregateRoot.ts'
 import { createUserAggregate, setupEventStore } from './setup.ts'
 import { CommandError } from '../errors.ts'
+import lock from '../lock.ts'
 
 describe('transaction', () => {
   const createAggregateRoots = () => {
@@ -181,5 +183,56 @@ describe('transaction', () => {
       const state = await aggregateRoot.newStream().create().state()
       expect(state.created).toBeTrue()
     })
+  })
+
+  it('applies settled defaults from options to dispatched streams', async () => {
+    const context = new AsyncLocalStorage<string>()
+
+    const slowAggregate = createAggregateRoot('slow')
+      .withEvents({
+        Written: z.string(),
+      })
+      .withCommands((event) => ({
+        async write(delay: number, name: string) {
+          await setTimeout(delay)
+          return event('Written', `${name}:${context.getStore() ?? 'none'}`)
+        },
+      }))
+
+    const { eventStore, pseudoEventStore } = setupEventStore(slowAggregate, {
+      lock: lock(40), // 40ms
+    })
+
+    // The transaction's write holds the lock on slow:a, but its 100ms command
+    // outlives the 40ms lock TTL, so the direct write slips in and advances
+    // the stream to v1. The transaction's append then loses the race — without
+    // the settled defaults declared below the ConcurrencyError would surface
+    // from the transaction; with them the auto-settle reloads and re-applies
+    // the command.
+    await Promise.all([
+      eventStore.transaction(
+        async () => {
+          context.run('tx', () => {
+            slowAggregate.loadStream('a').write(100, 'TX')
+          })
+        },
+        { settled: { maxRetries: 3 } },
+      ),
+      (async () => {
+        await setTimeout(30)
+        await slowAggregate.loadStream('a').write(5, 'direct').settled()
+      })(),
+    ])
+
+    const persisted = pseudoEventStore.filter(
+      (event) => event.streamType === 'slow',
+    )
+    // 'TX:tx' also proves the retry re-ran the command inside the dispatch
+    // site's async context — the AsyncLocalStorage value survived the retry.
+    expect(persisted.map((event) => event.payload)).toEqual([
+      'direct:none',
+      'TX:tx',
+    ])
+    expect(persisted.map((event) => event.streamVersion)).toEqual([1, 2])
   })
 })

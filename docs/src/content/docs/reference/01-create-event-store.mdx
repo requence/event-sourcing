@@ -90,6 +90,8 @@ await settingsRoot.loadStream('global').update({ theme: 'dark' }).settled({
 
 Retry is **opt-in per call** (default `0`) rather than a global setting, because it is only safe for pure command handlers and some flows — such as a fixed-id `newStream(...)` used for idempotent create — deliberately rely on the `ConcurrencyError` surfacing.
 
+Inside a [process manager](/reference/04-create-process-manager/) or a [transaction](#transactionhandler-options), `settled()` cannot be called — the surrounding scope settles dispatched streams automatically when it completes. Declare the retry defaults on that scope instead: [`createProcessManager(name, { settled })`](#createprocessmanagername-options) or [`transaction(handler, { settled })`](#transactionhandler-options).
+
 ## Running Multiple Instances
 
 `redisLock` makes the **write path** safe to scale: any number of instances can accept commands, because stream appends are guarded by both the distributed lock and the storage adapter's optimistic-concurrency check (a `ConcurrencyError` is raised if two instances race on the same stream version).
@@ -133,7 +135,7 @@ const userList = eventStore.createProjection('user-list')
   })
 ```
 
-### `createProcessManager(name)`
+### `createProcessManager(name, options?)`
 
 Creates and registers a new [Process Manager](/reference/04-create-process-manager/) with the given name.
 
@@ -143,6 +145,24 @@ const cascadeDelete = eventStore.createProcessManager('cascade-delete')
     async onOrganizationDeleted({ payload }) { /* ... */ }
   })
 ```
+
+Streams that handlers dispatch commands on are settled automatically when the handler completes (explicit `settled()` calls are not allowed inside a process manager). The optional second parameter declares defaults for those auto-settles:
+
+```typescript
+// Unattended cascades: recover from residual concurrency races
+// instead of surfacing them, up to 3 reload-and-re-apply attempts.
+const cascadeDelete = eventStore.createProcessManager('cascade-delete', {
+  settled: { maxRetries: 3 },
+})
+```
+
+| Option | Type | Description |
+|---|---|---|
+| `settled` | `SettledOptions` | Defaults applied when the process manager auto-settles dispatched streams — see [Retrying on concurrency conflicts](/reference/02-create-aggregate-root/#retrying-on-concurrency-conflicts). |
+
+<Aside type="caution">
+  A process-manager-wide default asserts that **all** commands its handlers dispatch are pure functions of loaded state and their arguments — a handler added later inherits the retry behaviour invisibly.
+</Aside>
 
 ### `createEventListener(name)`
 
@@ -163,7 +183,7 @@ Returns a registered aggregate root by its type name. Fully type-safe — the re
 const userRoot = eventStore.getAggregateRoot('user')
 ```
 
-### `transaction(handler)`
+### `transaction(handler, options?)`
 
 Executes the given async handler inside a transaction. Events from all aggregate roots within the handler are batched and committed atomically.
 
@@ -176,6 +196,18 @@ await eventStore.transaction(async () => {
   user.create({ name: 'Alice', orgId: org.streamId })
 })
 ```
+
+Streams dispatched inside the handler are settled automatically when the transaction completes (explicit `settled()` calls are not allowed there). The optional second parameter declares defaults for those auto-settles:
+
+```typescript
+await eventStore.transaction(async () => {
+  // ...
+}, { settled: { maxRetries: 3 } })
+```
+
+| Option | Type | Description |
+|---|---|---|
+| `settled` | `SettledOptions` | Defaults applied when the transaction auto-settles dispatched streams — see [Retrying on concurrency conflicts](/reference/02-create-aggregate-root/#retrying-on-concurrency-conflicts). |
 
 ### `init()`
 

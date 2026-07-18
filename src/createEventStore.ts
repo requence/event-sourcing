@@ -13,6 +13,7 @@ import {
 import {
   type InternalProcessManager,
   type ProcessManagerApi,
+  type ProcessManagerOptions,
   buildProcessManagerCreator,
 } from './createProcessManager.ts'
 import {
@@ -24,7 +25,7 @@ import {
 } from './createProjection.ts'
 import lock, { type LockCreator } from './lock.ts'
 import { withRefreshing } from './refresh.ts'
-import createTransaction from './transaction.ts'
+import createTransaction, { type TransactionOptions } from './transaction.ts'
 import type {
   BaseInputEvent,
   BaseOutputEvent,
@@ -126,7 +127,10 @@ export type EventStore<
   ): SupportsProjectionSnapshots extends true
     ? ProjectionApiWithSnapshots<Event>
     : ProjectionApi<Event>
-  createProcessManager(name: string): ProcessManagerApi<never, Event>
+  createProcessManager(
+    name: string,
+    options?: ProcessManagerOptions,
+  ): ProcessManagerApi<never, Event>
   createEventListener(name: string): EventListenerApi<Event>
   rebuild: () => Promise<void>
   isReady: () => Promise<void>
@@ -134,7 +138,10 @@ export type EventStore<
   getAggregateRoot<S extends Root['type']>(
     type: S,
   ): Root extends { type: S } ? Root : never
-  transaction<T extends () => any>(handler: T): Promise<Awaited<ReturnType<T>>>
+  transaction<T extends () => any>(
+    handler: T,
+    options?: TransactionOptions,
+  ): Promise<Awaited<ReturnType<T>>>
 }
 
 export function createEventStore<const Root extends AnyAggregateRoot>(
@@ -357,11 +364,11 @@ export function createEventStore<const Root extends AnyAggregateRoot>(
       }
       return api
     },
-    createProcessManager(name) {
+    createProcessManager(name, options) {
       if (processManagers.has(name)) {
         throw new Error(`Process Manager ${name} is already registered`)
       }
-      const api = baseCreateProcessManager(name)
+      const api = baseCreateProcessManager(name, options)
 
       const internalApi = api as unknown as InternalProcessManager
       internalApi.setRelatedStreamEvents((handlers) =>
@@ -464,8 +471,8 @@ export function createEventStore<const Root extends AnyAggregateRoot>(
         (aggregateRoot) => aggregateRoot.type === type,
       ) as any
     },
-    async transaction(handler) {
-      return transaction.run(handler)
+    async transaction(handler, options) {
+      return transaction.run(handler, options)
     },
   } as EventStore<any, Root>
 

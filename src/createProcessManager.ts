@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 
+import type { SettledOptions } from './createAggregateRoot.ts'
 import {
   type CheckpointApi,
   type CheckpointMethods,
@@ -23,9 +24,21 @@ import type {
   StreamEvents,
 } from './utilityTypes.js'
 
+/**
+ * Options for `createProcessManager`.
+ *
+ * `settled` — default {@link SettledOptions} applied when the process manager
+ * auto-settles the streams its handlers dispatched commands on (explicit
+ * `settled()` calls are not allowed inside a process manager).
+ */
+export type ProcessManagerOptions = {
+  settled?: SettledOptions
+}
+
 type ProcessManagerInfo = {
   name: string
   event: BaseOutputEvent
+  settledDefaults?: SettledOptions
 }
 const processManagerInfoStore = new AsyncLocalStorage<ProcessManagerInfo>()
 
@@ -129,7 +142,7 @@ export function buildProcessManagerCreator(params: {
   checkpoint: CheckpointMethods
   onRefresh?: OnProgress
 }) {
-  return (name: string): ProcessManagerApi => {
+  return (name: string, options?: ProcessManagerOptions): ProcessManagerApi => {
     let idle = true
     let createEventHandlers: (
       state: any,
@@ -196,6 +209,7 @@ export function buildProcessManagerCreator(params: {
             {
               name,
               event,
+              settledDefaults: options?.settled,
             },
             async () => {
               try {
