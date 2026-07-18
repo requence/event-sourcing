@@ -1,5 +1,22 @@
 # @requence/event-sourcing
 
+## 1.3.0
+
+### Minor Changes
+
+- [`c32fb4d`](https://github.com/requence/event-sourcing/commit/c32fb4dfaa5285d63df1c2389263c77eed949427) Thanks [@Torsten85](https://github.com/Torsten85)! - Add optimistic-concurrency retry to `stream.settled()`. Passing
+  `settled({ maxRetries })` reloads the aggregate stream and re-applies the
+  dispatched commands when the append loses the version race
+  (`ConcurrencyError`), instead of surfacing the error. This complements the
+  distributed `lock`: the lock serializes writers to avoid the race, while
+  `maxRetries` recovers from the residual cases it cannot cover (e.g. a lock TTL
+  lapsing, or single-instance writes that still race the storage constraint).
+
+  Defaults to `0` (no retry — the previous behaviour is unchanged). Only the
+  append is retried, so command handlers must be pure functions of loaded state
+  and their arguments for retries to be safe. A losing attempt's lock is released
+  before the retry re-acquires, so retries do not wait out the lock's TTL.
+
 ## 1.2.0
 
 ### Minor Changes
