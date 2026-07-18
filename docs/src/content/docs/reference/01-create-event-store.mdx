@@ -76,6 +76,20 @@ The implementation uses atomic `SET NX PX` for acquisition and Lua scripts for s
   The default in-memory lock is ideal for testing and single-process apps. Switch to `redisLock` when running multiple server instances.
 </Aside>
 
+### Optimistic-concurrency retry
+
+The lock and the storage adapter's version check are two layers of the same story: the lock **avoids** the race by serializing writers, and the version check **catches** it if a race slips through (raising a [`ConcurrencyError`](/reference/07-errors/)). A race can still slip through when a lock's TTL lapses mid-command, or in single-instance deployments where no distributed lock is configured.
+
+For those residual cases, opt in to recovery at the call site with [`settled({ maxRetries })`](/reference/02-create-aggregate-root/#retrying-on-concurrency-conflicts): the stream is reloaded and the commands re-applied against the current version instead of the error surfacing.
+
+```typescript
+await settingsRoot.loadStream('global').update({ theme: 'dark' }).settled({
+  maxRetries: 5,
+})
+```
+
+Retry is **opt-in per call** (default `0`) rather than a global setting, because it is only safe for pure command handlers and some flows — such as a fixed-id `newStream(...)` used for idempotent create — deliberately rely on the `ConcurrencyError` surfacing.
+
 ## Running Multiple Instances
 
 `redisLock` makes the **write path** safe to scale: any number of instances can accept commands, because stream appends are guarded by both the distributed lock and the storage adapter's optimistic-concurrency check (a `ConcurrencyError` is raised if two instances race on the same stream version).

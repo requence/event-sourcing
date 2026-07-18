@@ -540,6 +540,48 @@ describe('hotAggregateRoot', () => {
     expect(name).toBe('B') // 'A' never made it
   })
 
+  it('retries the losing write on ConcurrencyError when maxRetries is set', async () => {
+    const slowAggregateRoot = createAggregateRoot('slow')
+      .withEvents(({ z }) => ({
+        Created: z.string(),
+      }))
+      .withCommands((event) => ({
+        async create(delay: number, name: string) {
+          await setTimeout(delay)
+          return event('Created', name)
+        },
+      }))
+
+    const { eventStore, pseudoEventStore } = setupEventStore(slowAggregateRoot, {
+      lock: lock(40), // 40ms
+    })
+
+    const called: string[] = []
+    eventStore.createEventListener('test').withEventHandlers({
+      onCreated(event) {
+        called.push(event.payload)
+      },
+    })
+
+    // Same race as the test above: A locks stream:a, the lock auto-releases
+    // after 40ms while A is still in its 100ms command, so B slips in and
+    // advances the stream to v1. A then loses the append race — but with
+    // maxRetries it reloads (now seeing B's event) and re-appends at v2 instead
+    // of surfacing the ConcurrencyError.
+    await Promise.all([
+      slowAggregateRoot
+        .loadStream('a')
+        .create(100, 'A')
+        .settled({ maxRetries: 3 }),
+      slowAggregateRoot.loadStream('a').create(5, 'B').settled(),
+    ])
+
+    const persisted = pseudoEventStore.filter((e) => e.streamType === 'slow')
+    expect(persisted.map((e) => e.payload)).toEqual(['B', 'A'])
+    expect(persisted.map((e) => e.streamVersion)).toEqual([1, 2])
+    expect(called).toEqual(['B', 'A'])
+  })
+
   it('auto extends locks', async () => {
     const aggregateRoot = createAggregateRoot('slow')
       .withEvents(({ z }) => ({

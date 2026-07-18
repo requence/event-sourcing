@@ -12,6 +12,7 @@ import { getProcessManagerInfo } from './createProcessManager.ts'
 import { getProjectionInfo } from './createProjection.ts'
 import {
   CommandError,
+  ConcurrencyError,
   EventValidationError,
   InfiniteLoopError,
   ValidationError,
@@ -135,12 +136,25 @@ type VersionBuilder = <V extends number, S extends z.ZodType>(
   schema: S,
 ) => { schema: S; version: V }
 
+/**
+ * Options for {@link Stream.settled}.
+ *
+ * `maxRetries` — how many times to reload the stream and re-apply the dispatched
+ * commands when the append loses the optimistic-concurrency race
+ * ({@link ConcurrencyError}). Defaults to `0` (no retry — surface the error, the
+ * historical behaviour). Only the append is retried; command handlers must be
+ * pure functions of loaded state and their arguments for retries to be safe.
+ */
+export type SettledOptions = {
+  maxRetries?: number
+}
+
 type Stream<Commands extends Record<string, Command>, State> = {
   [A in keyof Commands]: (
     ...args: Parameters<Commands[A]>
   ) => Stream<Commands, State>
 } & {
-  settled: () => Promise<Stream<Commands, State>>
+  settled: (options?: SettledOptions) => Promise<Stream<Commands, State>>
   state: () => Promise<State>
   transformError: <T extends Error>(
     error: Constructor<T>,
@@ -150,7 +164,7 @@ type Stream<Commands extends Record<string, Command>, State> = {
 }
 
 export type AnyStream = {
-  settled: () => Promise<AnyStream>
+  settled: (options?: SettledOptions) => Promise<AnyStream>
   state: () => Promise<unknown>
   transformError: <T extends Error>(
     error: Constructor<T>,
@@ -475,7 +489,29 @@ export function createAggregateRoot<Name extends string>(type: Name) {
     return version
   }
 
-  const createStream = (state: any, streamId: string) => {
+  // A command as dispatched by the caller, recorded so it can be re-applied
+  // against a freshly-loaded stream when a settle() retries a ConcurrencyError.
+  type RecordedCommand = { name: string; args: any[] }
+
+  type CreateStreamConfig = {
+    // Whether to load the existing stream before commands run. `false` for
+    // newStream (expects version 0); `true` for loadStream and every retry.
+    load?: boolean
+    filter?: (event: BaseOutputEvent) => MaybePromise<boolean>
+    // Seeded on a retry so replayed commands re-apply automatically, and
+    // transformError handlers registered before settle() carry over.
+    replayCommands?: RecordedCommand[]
+    errorHandlerEntries?: [
+      Constructor<Error>,
+      (error: CommandError<Error>) => Error,
+    ][]
+  }
+
+  const createStream = (
+    state: any,
+    streamId: string,
+    config: CreateStreamConfig = {},
+  ) => {
     let version = 0
     const snapshotApi = createSnapshotApi?.(
       state,
@@ -485,7 +521,8 @@ export function createAggregateRoot<Name extends string>(type: Name) {
     const errorHandlers = new Map<
       Constructor<Error>,
       (error: CommandError<Error>) => Error
-    >()
+    >(config.errorHandlerEntries)
+    const dispatchedCommands: RecordedCommand[] = []
     let downstreamSettledPromise = () => Promise.resolve()
     let releaseLock!: () => Promise<void>
     let extendLock!: EventHandlerOptions['extendLock']
@@ -562,6 +599,9 @@ export function createAggregateRoot<Name extends string>(type: Name) {
           if (isRefreshing()) {
             return api.commands
           }
+
+          // Record for a potential settle() retry (reload + re-apply).
+          dispatchedCommands.push({ name: commandName, args })
 
           const commandId = crypto.randomUUID()
           transactionDelay ??= transaction.delay()
@@ -747,7 +787,7 @@ export function createAggregateRoot<Name extends string>(type: Name) {
 
           return state
         },
-        async settled() {
+        async settled(options?: SettledOptions): Promise<any> {
           const parentProcessManager = getProcessManagerInfo()
           if (parentProcessManager) {
             const error = new Error(
@@ -765,7 +805,36 @@ export function createAggregateRoot<Name extends string>(type: Name) {
             throw error
           }
 
-          await awaitAll(() => commandChain)
+          const maxRetries = options?.maxRetries ?? 0
+
+          try {
+            await awaitAll(() => commandChain)
+          } catch (error) {
+            // Optimistic-concurrency recovery: another writer advanced the
+            // stream between load and append. Reload and re-apply the same
+            // commands against the fresh version. A failed append leaves this
+            // attempt's lock held (it never reached releaseLock), so release it
+            // before the retry re-acquires — otherwise the retry blocks until
+            // the lock's TTL lapses.
+            if (maxRetries > 0 && error instanceof ConcurrencyError) {
+              await releaseLock?.()
+
+              const retryStream = createStream(clone(initialState), streamId, {
+                load: true,
+                filter: config.filter,
+                replayCommands: dispatchedCommands,
+                errorHandlerEntries: Array.from(errorHandlers),
+              })
+
+              return retryStream.commands.settled({
+                ...options,
+                maxRetries: maxRetries - 1,
+              })
+            }
+
+            throw error
+          }
+
           await downstreamSettledPromise()
           return api.commands
         },
@@ -782,6 +851,18 @@ export function createAggregateRoot<Name extends string>(type: Name) {
 
     registerRootPromiseToUpstream(() => api.commands.settled())
     transaction.after(() => api.commands.settled())
+
+    // Fold existing events before commands run (loadStream, and every retry).
+    if (config.load) {
+      api.load(config.filter)
+    }
+
+    // Re-apply the caller's commands on a retry so the fresh, reloaded stream
+    // reproduces the original intent against the current version.
+    for (const { name, args } of config.replayCommands ?? []) {
+      ;(api.commands as any)[name](...args)
+    }
+
     return api
   }
 
@@ -861,8 +942,9 @@ export function createAggregateRoot<Name extends string>(type: Name) {
           `aggregateRoot.newStream() cannot be called inside a projection. Attempted on aggregate stream ${type} within Projection ${parentProjectionName}.`,
         )
       }
-      return createStream(clone(initialState), id ?? crypto.randomUUID())
-        .commands as any
+      return createStream(clone(initialState), id ?? crypto.randomUUID(), {
+        load: false,
+      }).commands as any
     },
 
     loadStream(id, filter) {
@@ -878,9 +960,10 @@ export function createAggregateRoot<Name extends string>(type: Name) {
           `aggregateRoot.loadStream("${id}") cannot be called inside a projection. Attempted on aggregate stream ${type} within Projection ${parentProjectionName}.`,
         )
       }
-      const root = createStream(clone(initialState), id)
-      root.load(filter as any)
-      return root.commands as any
+      return createStream(clone(initialState), id, {
+        load: true,
+        filter: filter as any,
+      }).commands as any
     },
 
     linkEventStore(load, append, emit, trans, lock, snap) {

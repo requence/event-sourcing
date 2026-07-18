@@ -191,13 +191,35 @@ All streams expose the following methods alongside the commands defined via `wit
 
 | Method | Return Type | Description |
 |---|---|---|
-| `.settled()` | `Promise<Stream>` | Waits for all queued commands to be persisted and all downstream listeners to finish processing. Returns the stream for chaining. |
+| `.settled(options?)` | `Promise<Stream>` | Waits for all queued commands to be persisted and all downstream listeners to finish processing. Returns the stream for chaining. Accepts an optional `{ maxRetries }` — see [Retrying on concurrency conflicts](#retrying-on-concurrency-conflicts). |
 | `.state()` | `Promise<State>` | Returns the current state after all pending commands have been applied. |
 | `.transformError(ErrorClass, handler)` | `Stream` | Registers an error transformer for a specific error type thrown inside commands. |
 | `.streamId` | `string` | The unique ID of this stream instance. |
 
 <Aside type="caution">
   `.settled()` cannot be called inside a process manager or a transaction. Use it only in top-level application code.
+</Aside>
+
+### Retrying on concurrency conflicts
+
+When two writers race on the same stream version, the losing append raises a [`ConcurrencyError`](/reference/07-errors/). This is normally prevented by the [lock](/reference/01-create-event-store/#concurrency--locking), but it can still surface in the residual cases the lock does not cover — a lock TTL lapsing mid-command, or single-instance writes racing the storage adapter's optimistic-concurrency check.
+
+Pass `maxRetries` to `.settled()` to recover automatically: on a `ConcurrencyError` the stream is **reloaded** and the dispatched commands are **re-applied** against the current version, up to `maxRetries` times, before the error is surfaced.
+
+```typescript
+const settings = settingsRoot.loadStream('global')
+settings.update({ theme: 'dark' })
+
+// Reload + re-apply up to 5 times if another writer wins the race.
+await settings.settled({ maxRetries: 5 })
+```
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `maxRetries` | `number` | `0` | Number of reload-and-re-apply attempts after a `ConcurrencyError`. `0` surfaces the error immediately (the default). |
+
+<Aside type="caution">
+  Only the append is retried — command handlers are re-run against the reloaded state. They must be **pure functions of loaded state and their arguments**; a handler with side effects (sending mail, calling an external API) would repeat them on each attempt. Leave `maxRetries` at `0` when you *want* the error to surface, such as a fixed-id `newStream(...)` used for idempotent create/dedup.
 </Aside>
 
 ### Command Chaining

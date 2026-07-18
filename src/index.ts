@@ -26,6 +26,7 @@ export {
   type Snapshot as AggregateRootSnapshot,
   type AnyAggregateRoot,
   type AnyStream,
+  type SettledOptions,
   createAggregateRoot,
 } from './createAggregateRoot.ts'
 
