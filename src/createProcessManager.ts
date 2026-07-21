@@ -293,7 +293,9 @@ export function buildProcessManagerCreator(params: {
         await hydrated
       },
       async beginSession() {
-        if (!hasState) return
+        if (!hasState) {
+          return
+        }
         // Load through the checkpoint API so the local version is synced with
         // the store; the subsequent fold relies on it for compare-and-swap.
         const checkpoint = await checkpointApi.load()
@@ -310,7 +312,9 @@ export function buildProcessManagerCreator(params: {
         sessionActive = true
       },
       endSession() {
-        if (!hasState) return
+        if (!hasState) {
+          return
+        }
         state = null
         sessionActive = false
       },
@@ -379,10 +383,7 @@ export function buildProcessManagerCreator(params: {
       async state() {
         await hydrated
         if (!sessionActive && hasState) {
-          const checkpoint = await params.checkpoint.get(
-            'processManager',
-            name,
-          )
+          const checkpoint = await params.checkpoint.get('processManager', name)
           return checkpoint?.metadata?.state ?? clone(initialState)
         }
         return state

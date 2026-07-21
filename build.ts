@@ -40,6 +40,8 @@ const result = await Bun.build({
     'drizzle-orm',
     'drizzle-orm/*',
     'ioredis',
+    'surrealdb',
+    '@surrealdb/node',
     'async-mutex',
     'fast-equals',
     'superjson',

@@ -1,0 +1,47 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "import", "jest"],
+  "categories": {
+    "correctness": "error"
+  },
+  "rules": {
+    "curly": ["error", "all"],
+    "object-shorthand": ["error", "always"],
+    "no-constant-condition": "off",
+    "arrow-body-style": ["warn", "as-needed"],
+    "no-async-promise-executor": "off",
+    "sort-imports": [
+      "warn",
+      {
+        "ignoreCase": false,
+        "ignoreDeclarationSort": true,
+        "ignoreMemberSort": false,
+        "memberSyntaxSortOrder": ["none", "all", "multiple", "single"],
+        "allowSeparatedGroups": true
+      }
+    ],
+    "import/first": "error",
+    "import/no-duplicates": "error",
+    "jest/no-focused-tests": "warn",
+    "typescript/no-this-alias": "off",
+    "typescript/ban-ts-comment": "off",
+    "typescript/no-empty-object-type": "off",
+    "typescript/no-explicit-any": "off",
+    "typescript/no-import-type-side-effects": "error",
+    "typescript/no-unused-vars": [
+      "warn",
+      {
+        "ignoreRestSiblings": true,
+        "argsIgnorePattern": "^_"
+      }
+    ],
+    "typescript/consistent-type-imports": [
+      "warn",
+      {
+        "prefer": "type-imports",
+        "fixStyle": "inline-type-imports"
+      }
+    ]
+  },
+  "ignorePatterns": ["dist", "docs"]
+}

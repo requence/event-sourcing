@@ -1,5 +1,9 @@
-import type { AnyAggregateRoot } from '../createAggregateRoot.ts'
-import type { Checkpoint } from '../createCheckpointApi.ts'
+import type {
+  AggregateRootSnapshotMethods,
+  AnyAggregateRoot,
+} from '../createAggregateRoot.ts'
+import type { Checkpoint, CheckpointMethods } from '../createCheckpointApi.ts'
+import type { ProjectionSnapshotMethods } from '../createProjection.ts'
 import {
   type AggregateRootSnapshot,
   ConcurrencyError,
@@ -13,16 +17,20 @@ import type {
   EventStore,
   EventStoreParamsWithAggregateRootSnapshots,
   EventsFromRoot,
+  LoadEvents,
   OnProgress,
 } from '../createEventStore.ts'
 import type { LockCreator } from '../lock.ts'
-import type { BaseOutputEvent, MaybePromise } from '../utilityTypes.js'
+import type {
+  BaseInputEvent,
+  BaseOutputEvent,
+  MaybePromise,
+  StreamId,
+} from '../utilityTypes.js'
 
 export { createAggregateRoot } from '../index.ts'
 
-export type OnEventsAppended = (
-  events: BaseOutputEvent[],
-) => MaybePromise<void>
+export type OnEventsAppended = (events: BaseOutputEvent[]) => MaybePromise<void>
 
 interface MemoryEventStoreParams<Root extends AnyAggregateRoot> {
   aggregateRoots: Root[]
@@ -34,33 +42,26 @@ interface MemoryEventStoreParams<Root extends AnyAggregateRoot> {
   onEventsAppended?: OnEventsAppended
 }
 
-export function createEventStore<const Root extends AnyAggregateRoot>({
-  aggregateRoots,
-  postProcessEvent,
-  onProjectionReplay,
-  onProcessManagerRefresh,
-  onEventsAppended,
-  autoInit,
-  lock,
-}: MemoryEventStoreParams<Root>): EventStore<
-  EventsFromRoot<Root>,
-  Root,
-  true
-> {
+export function createMemoryStorage(params?: {
+  onEventsAppended?: OnEventsAppended
+}): {
+  loadEvents: LoadEvents
+  appendEvents: (
+    streamId: StreamId,
+    events: BaseInputEvent[],
+    expectedVersion: number,
+  ) => BaseOutputEvent[]
+  checkpoint: CheckpointMethods
+  projectionSnapshot: ProjectionSnapshotMethods
+  aggregateRootSnapshot: AggregateRootSnapshotMethods
+} {
   const events: Event[] = []
   const checkpoints = new Set<Checkpoint>()
   const aggregateRootSnapshots = new Map<string, AggregateRootSnapshot>()
   const projectionSnapshots = new Set<ProjectionSnapshot>()
   const projectionAppliedCount = new Map<string, number>()
 
-  return createBaseEventStore({
-    aggregateRoots,
-    postProcessEvent,
-    onProjectionReplay,
-    onProcessManagerRefresh,
-    autoInit,
-    lock,
-
+  return {
     async *loadEvents(select, range) {
       let streamTypes: string[] | null = null
       let streamIds: string[] | null = null
@@ -131,7 +132,7 @@ export function createEventStore<const Root extends AnyAggregateRoot>({
       }))
 
       events.push(...extendedEvents)
-      onEventsAppended?.(extendedEvents)
+      params?.onEventsAppended?.(extendedEvents)
       return extendedEvents
     },
 
@@ -155,7 +156,10 @@ export function createEventStore<const Root extends AnyAggregateRoot>({
         if (persisted) {
           // Compare-and-swap: reject the write when another writer advanced the
           // checkpoint, or when the caller expected to create a fresh one.
-          if (expectedVersion === null || persisted.version !== expectedVersion) {
+          if (
+            expectedVersion === null ||
+            persisted.version !== expectedVersion
+          ) {
             return false
           }
           persisted.lastEventPosition = checkpoint.lastEventPosition
@@ -232,5 +236,27 @@ export function createEventStore<const Root extends AnyAggregateRoot>({
         }
       },
     },
+  }
+}
+
+export function createEventStore<const Root extends AnyAggregateRoot>({
+  aggregateRoots,
+  postProcessEvent,
+  onProjectionReplay,
+  onProcessManagerRefresh,
+  onEventsAppended,
+  autoInit,
+  lock,
+}: MemoryEventStoreParams<Root>): EventStore<EventsFromRoot<Root>, Root, true> {
+  const storage = createMemoryStorage({ onEventsAppended })
+
+  return createBaseEventStore({
+    aggregateRoots,
+    postProcessEvent,
+    onProjectionReplay,
+    onProcessManagerRefresh,
+    autoInit,
+    lock,
+    ...storage,
   }) as any
 }

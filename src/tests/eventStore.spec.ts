@@ -90,9 +90,7 @@ describe('Event Store', () => {
     // write re-propagated stream A's stale ConcurrencyError instead of running.
     await usersAggregate.newStream(userB).create('B').settled()
 
-    expect(
-      pseudoEventStore.some((e) => e.streamId === userB),
-    ).toBeTrue()
+    expect(pseudoEventStore.some((e) => e.streamId === userB)).toBeTrue()
   })
 
   it('throws on interaction with posponed init', async () => {

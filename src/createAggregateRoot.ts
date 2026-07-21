@@ -616,9 +616,8 @@ export function createAggregateRoot<Name extends string>(type: Name) {
                 return previousEvents
               }
               const events = (
-                await normalizeArray(
-                  commandFn.apply(rawCommands, args),
-                  () => extendLock(),
+                await normalizeArray(commandFn.apply(rawCommands, args), () =>
+                  extendLock(),
                 )
               ).filter((event) => Boolean(event))
 

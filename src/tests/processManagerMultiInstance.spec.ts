@@ -5,8 +5,8 @@ import { z } from 'zod/v4'
 import type { Checkpoint } from '../createCheckpointApi.ts'
 import type { BaseOutputEvent, MaybePromise } from '../utilityTypes.js'
 import {
-  type Event,
   ConcurrencyError,
+  type Event,
   createAggregateRoot,
   createEventStore,
   isStreamEvents,
@@ -73,19 +73,30 @@ function createSharedDatabase() {
       }
 
       for (const event of events) {
-        if (streamTypes?.length && !streamTypes.includes(event.streamType))
+        if (streamTypes?.length && !streamTypes.includes(event.streamType)) {
           continue
-        if (streamIds?.length && !streamIds.includes(event.streamId)) continue
-        if (eventTypes?.length && !eventTypes.includes(event.type)) continue
-        if (range?.from !== undefined && event.position < range.from) continue
-        if (range?.to !== undefined && event.position > range.to) continue
+        }
+        if (streamIds?.length && !streamIds.includes(event.streamId)) {
+          continue
+        }
+        if (eventTypes?.length && !eventTypes.includes(event.type)) {
+          continue
+        }
+        if (range?.from !== undefined && event.position < range.from) {
+          continue
+        }
+        if (range?.to !== undefined && event.position > range.to) {
+          continue
+        }
         yield event
       }
     },
     checkpoint: {
       get(type: string, name: string) {
         for (const cp of checkpoints) {
-          if (cp.type === type && cp.name === name) return cp
+          if (cp.type === type && cp.name === name) {
+            return cp
+          }
         }
       },
       upsert(checkpoint: Checkpoint, expectedVersion: number | null) {

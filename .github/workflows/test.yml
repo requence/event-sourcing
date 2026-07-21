@@ -4,15 +4,15 @@ on:
   push:
     branches: [main]
     paths-ignore:
-      - "docs/**"
-      - ".changeset/**"
-      - ".github/**"
+      - 'docs/**'
+      - '.changeset/**'
+      - '.github/**'
   pull_request:
     branches: [main]
     paths-ignore:
-      - "docs/**"
-      - ".changeset/**"
-      - ".github/**"
+      - 'docs/**'
+      - '.changeset/**'
+      - '.github/**'
 
 jobs:
   test:

@@ -13,7 +13,7 @@ Build resilient, auditable systems by storing every state change as an immutable
 - **Projections** — build query-optimized read models from events, with full replay support.
 - **Process Managers** — coordinate workflows across multiple aggregates.
 - **Event Listeners** — react to events with lightweight, stateless side effects.
-- **Storage Adapters** — swap between an in-memory store (great for testing), PostgreSQL via Drizzle, or Redis.
+- **Storage Adapters** — swap between an in-memory store (great for testing), PostgreSQL via Drizzle, or SurrealDB.
 - **Type-Safe Events** — leverage Zod schemas and TypeScript for compile-time and runtime guarantees on every event shape.
 
 ## Install
@@ -66,10 +66,11 @@ console.log(totals.get(stream.streamId)) // 6
 
 ## Storage Adapters
 
-| Adapter | Import Path | Use Case |
-|---------|------------|----------|
-| In-Memory | `@requence/event-sourcing/memory` | Testing & prototyping |
-| PostgreSQL (Drizzle) | `@requence/event-sourcing/drizzle/postgres` | Production |
+| Adapter              | Import Path                                 | Use Case              |
+| -------------------- | ------------------------------------------- | --------------------- |
+| In-Memory            | `@requence/event-sourcing/memory`           | Testing & prototyping |
+| PostgreSQL (Drizzle) | `@requence/event-sourcing/drizzle/postgres` | Production            |
+| SurrealDB            | `@requence/event-sourcing/surreal`          | Production            |
 
 ## Documentation
 

@@ -552,9 +552,12 @@ describe('hotAggregateRoot', () => {
         },
       }))
 
-    const { eventStore, pseudoEventStore } = setupEventStore(slowAggregateRoot, {
-      lock: lock(40), // 40ms
-    })
+    const { eventStore, pseudoEventStore } = setupEventStore(
+      slowAggregateRoot,
+      {
+        lock: lock(40), // 40ms
+      },
+    )
 
     const called: string[] = []
     eventStore.createEventListener('test').withEventHandlers({
