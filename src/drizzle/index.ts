@@ -361,7 +361,7 @@ export function createEventStore<const Root extends AnyAggregateRoot>({
         return {
           ...snapshot,
           state: superjson.parse(snapshot.state),
-          metadata: super.parse(snapshot.metadata),
+          metadata: superjson.parse(snapshot.metadata),
         }
       },
       async delete(target, fromPosition) {
