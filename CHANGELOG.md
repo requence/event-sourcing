@@ -1,5 +1,11 @@
 # @requence/event-sourcing
 
+## 1.4.1
+
+### Patch Changes
+
+- [#11](https://github.com/requence/event-sourcing/pull/11) [`a6ba842`](https://github.com/requence/event-sourcing/commit/a6ba8420de13278af47f8d093514c663f67cab39) Thanks [@Torsten85](https://github.com/Torsten85)! - Fix a typo in the drizzle adapter's `projectionSnapshot.get` that called `super.parse` instead of `superjson.parse` when deserializing snapshot metadata. Reading back a projection snapshot previously threw a `TypeError` at runtime.
+
 ## 1.4.0
 
 ### Minor Changes
