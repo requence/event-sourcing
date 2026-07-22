@@ -36,6 +36,6 @@ To build an Event Sourced system with `@requence/event-sourcing`, you'll use the
 - **Projections**: Build and maintain queryable read models (e.g., database tables) from events. Support full replay from scratch.
 - **Process Managers**: Coordinate workflows and cascading operations across multiple aggregates (e.g., deleting all child entities when a parent is removed).
 - **Event Listeners**: React to events with lightweight, stateless side effects like cache invalidation or notifications.
-- **Storage Adapters**: Choose a persistence backend — from a zero-dependency in-memory store for testing to PostgreSQL via Drizzle for production.
+- **Drivers**: Choose a persistence backend — from a zero-dependency in-memory store for testing to PostgreSQL via Drizzle or SurrealDB for production.
 
 In the following chapters, we'll dive deep into each of these concepts.

@@ -1,0 +1,36 @@
+---
+title: Drivers Overview
+description: Choose between built-in storage drivers for the event store.
+---
+
+`@requence/event-sourcing` ships with pluggable storage drivers that implement the low-level persistence layer — event storage, checkpoints, and snapshots. The core library defines the interfaces; each driver provides a concrete `createEventStore` function that wires everything together.
+
+| Driver | Import | Use case |
+|--------|--------|----------|
+| **[In-Memory](/drivers/02-in-memory/)** | `@requence/event-sourcing/memory` | Testing, prototyping, single-process apps |
+| **[Drizzle (PostgreSQL)](/drivers/03-drizzle/)** | `@requence/event-sourcing/drizzle` | Production workloads |
+| **[SurrealDB](/drivers/04-surrealdb/)** | `@requence/event-sourcing/surreal` | Production workloads on SurrealDB |
+
+All drivers expose the same `createEventStore` and `createAggregateRoot` API, so you can swap between them by changing a single import.
+
+## Swapping Drivers
+
+Because all drivers conform to the same `EventStore` interface, switching between them is a one-line change:
+
+```diff
+- import { createEventStore, createAggregateRoot } from '@requence/event-sourcing/drizzle'
++ import { createEventStore, createAggregateRoot } from '@requence/event-sourcing/memory'
+
+  const eventStore = createEventStore({
+-   database: db,
+    aggregateRoots: [user],
+  })
+```
+
+A common pattern is to select the driver based on the environment:
+
+```typescript
+const { createEventStore } = process.env.NODE_ENV === 'test'
+  ? await import('@requence/event-sourcing/memory')
+  : await import('@requence/event-sourcing/drizzle')
+```

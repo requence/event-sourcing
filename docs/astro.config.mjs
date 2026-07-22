@@ -41,7 +41,15 @@ export default defineConfig({
 						{ label: 'Projections', slug: 'concepts/03-projections' },
 						{ label: 'Process Managers', slug: 'concepts/04-process-managers' },
 						{ label: 'Event Listeners', slug: 'concepts/05-event-handlers' },
-						{ label: 'Storage Adapters', slug: 'concepts/06-storage-adapters' },
+					],
+				},
+				{
+					label: 'Drivers',
+					items: [
+						{ label: 'Overview', slug: 'drivers/01-overview' },
+						{ label: 'In-Memory', slug: 'drivers/02-in-memory' },
+						{ label: 'Drizzle (PostgreSQL)', slug: 'drivers/03-drizzle' },
+						{ label: 'SurrealDB', slug: 'drivers/04-surrealdb' },
 					],
 				},
 				{

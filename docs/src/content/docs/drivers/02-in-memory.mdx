@@ -1,0 +1,72 @@
+---
+title: In-Memory Driver
+description: Zero-dependency in-memory storage driver for testing and prototyping.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+The in-memory driver stores events, checkpoints, and snapshots in plain JavaScript arrays and maps. It requires **no external dependencies** and works out of the box.
+
+```typescript
+import { createEventStore, createAggregateRoot } from '@requence/event-sourcing/memory'
+
+const eventStore = createEventStore({
+  aggregateRoots: [userAggregateRoot],
+})
+```
+
+## When to use
+
+- **Unit and integration tests** — no database setup needed, tests run instantly.
+- **Prototyping** — focus on your domain logic before committing to a database.
+- **Single-process applications** — lightweight apps that don't need durable persistence.
+
+<Aside type="caution">
+  All data is lost when the process exits. Do not use the in-memory driver for production workloads that require durability.
+</Aside>
+
+## Configuration
+
+```typescript
+import { createEventStore, createAggregateRoot } from '@requence/event-sourcing/memory'
+
+const eventStore = createEventStore({
+  // Required — one or more aggregate roots
+  aggregateRoots: [user, project],
+
+  // Optional — disable automatic initialization (default: true)
+  autoInit: false,
+
+  // Optional — callback invoked after events are appended
+  onEventsAppended(events) {
+    console.log(`${events.length} event(s) appended`)
+  },
+
+  // Optional — progress callbacks for projection replays
+  onProjectionReplay: {
+    begin(name) { console.log(`Replaying ${name}…`) },
+    end(name) { console.log(`${name} replay complete`) },
+  },
+
+  // Optional — progress callbacks for process manager refreshes
+  onProcessManagerRefresh: {
+    begin(name) { console.log(`Refreshing ${name}…`) },
+    end(name) { console.log(`${name} refresh complete`) },
+  },
+
+  // Optional — post-process events before they are appended
+  postProcessEvent(event, aggregateRoot) {
+    return event
+  },
+})
+```
+
+## Features
+
+The in-memory driver provides full support for all event store features:
+
+- **Event storage** with position tracking and concurrency checks
+- **Checkpoints** for projection and process manager catch-up
+- **Aggregate root snapshots** for fast stream rehydration
+- **Projection snapshots** with applied-count tracking
+- **`ConcurrencyError`** thrown when the expected stream version doesn't match

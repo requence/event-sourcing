@@ -1,0 +1,85 @@
+---
+title: Drizzle (PostgreSQL) Driver
+description: Persist events to PostgreSQL using Drizzle ORM.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+The Drizzle driver persists events to a PostgreSQL database using [Drizzle ORM](https://orm.drizzle.team). It is a recommended choice for production.
+
+```typescript
+import { createEventStore, createAggregateRoot } from '@requence/event-sourcing/drizzle'
+import { drizzle } from 'drizzle-orm/node-postgres'
+
+const db = drizzle(process.env.DATABASE_URL!)
+
+const eventStore = createEventStore({
+  database: db,
+  aggregateRoots: [userAggregateRoot],
+})
+```
+
+## Database Schema
+
+The driver uses a dedicated `event_sourcing` PostgreSQL schema with the following tables:
+
+| Table | Purpose |
+|-------|---------|
+| `events` | Append-only event log with position, stream, and metadata |
+| `checkpoints` | Last-processed position (and optimistic-concurrency `version`) per projection/process manager |
+| `aggregate_root_snapshots` | Cached aggregate state for fast rehydration |
+| `projection_snapshots` | Cached projection state for snapshot-based projections |
+| `projection_applied_events` | Counter for snapshot frequency tracking |
+
+The table definitions are exported from `@requence/event-sourcing/drizzle/postgres` for use in Drizzle migrations:
+
+```typescript
+import {
+  events,
+  checkpoints,
+  aggregateRootSnapshots,
+  projectionSnapshots,
+  projectionAppliedEvents,
+} from '@requence/event-sourcing/drizzle/postgres'
+```
+
+## Configuration
+
+```typescript
+import { redisLock } from '@requence/event-sourcing/redis'
+import Redis from 'ioredis'
+
+const redis = new Redis(process.env.REDIS_URL)
+
+const eventStore = createEventStore({
+  // Required — Drizzle database instance or factory
+  database: db,
+
+  // Required — one or more aggregate roots
+  aggregateRoots: [user, project],
+
+  // Optional — distributed lock for multi-instance deployments
+  lock: redisLock(redis),
+
+  // Optional — disable automatic initialization
+  autoInit: false,
+
+  // Optional — callback invoked after events are appended
+  onEventsAppended(events) {
+    // e.g. broadcast via WebSocket
+  },
+
+  // Optional — replay and refresh progress callbacks
+  onProjectionReplay: { /* ... */ },
+  onProcessManagerRefresh: { /* ... */ },
+
+  // Optional — post-process events before persistence
+  postProcessEvent(event, aggregateRoot) {
+    return event
+  },
+})
+```
+
+<Aside type="tip">
+  The `database` parameter accepts either a Drizzle instance or a factory function `() => NodePgDatabase`. Use a factory when your database connection is lazy-initialized or pooled.
+</Aside>

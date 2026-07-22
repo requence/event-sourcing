@@ -1,0 +1,82 @@
+---
+title: SurrealDB Driver
+description: Persist events to SurrealDB using the official JavaScript SDK.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+The SurrealDB driver persists events to a [SurrealDB](https://surrealdb.com) database using the official [`surrealdb`](https://www.npmjs.com/package/surrealdb) JavaScript SDK (v2). It supports SurrealDB server 3.x.
+
+```typescript
+import { createEventStore, createAggregateRoot } from '@requence/event-sourcing/surreal'
+import { Surreal } from 'surrealdb'
+
+const db = new Surreal()
+await db.connect(process.env.SURREALDB_URL!)
+await db.use({ namespace: 'app', database: 'app' })
+
+const eventStore = createEventStore({
+  database: db,
+  aggregateRoots: [userAggregateRoot],
+})
+```
+
+## Database Schema
+
+The driver uses `SCHEMAFULL` tables mirroring the PostgreSQL layout:
+
+| Table | Purpose |
+|-------|---------|
+| `events` | Append-only event log with position, stream, and metadata |
+| `event_sourcing_counters` | Counter record providing the gapless global event position |
+| `checkpoints` | Last-processed position (and optimistic-concurrency `version`) per projection/process manager |
+| `aggregate_root_snapshots` | Cached aggregate state for fast rehydration |
+| `projection_snapshots` | Cached projection state for snapshot-based projections |
+| `projection_applied_events` | Counter for snapshot frequency tracking |
+
+By default the driver creates the schema itself: idempotent `DEFINE ... IF NOT EXISTS` statements run lazily before the first operation. Pass `initSchema: false` to opt out and manage the schema yourself — the DDL is exported for that purpose:
+
+```typescript
+import { initSchema, SCHEMA_STATEMENTS } from '@requence/event-sourcing/surreal'
+
+await initSchema(db) // or run SCHEMA_STATEMENTS through your own tooling
+```
+
+## Configuration
+
+```typescript
+const eventStore = createEventStore({
+  // Required — connected Surreal instance (namespace/database selected) or factory
+  database: db,
+
+  // Required — one or more aggregate roots
+  aggregateRoots: [user, project],
+
+  // Optional — disable automatic schema creation (default: true)
+  initSchema: false,
+
+  // Optional — distributed lock for multi-instance deployments
+  lock: redisLock(redis),
+
+  // Optional — disable automatic initialization
+  autoInit: false,
+
+  // Optional — callback invoked after events are appended
+  onEventsAppended(events) {
+    // e.g. broadcast via WebSocket
+  },
+
+  // Optional — replay and refresh progress callbacks
+  onProjectionReplay: { /* ... */ },
+  onProcessManagerRefresh: { /* ... */ },
+
+  // Optional — post-process events before persistence
+  postProcessEvent(event, aggregateRoot) {
+    return event
+  },
+})
+```
+
+<Aside type="note">
+  Global event positions come from a counter record updated inside the append transaction, so they are gapless and commit-ordered. Concurrent appends conflict on that counter and are retried automatically with backoff; the per-stream optimistic-concurrency check still raises `ConcurrencyError` when a stream actually advanced.
+</Aside>
