@@ -1,5 +1,19 @@
 # @requence/event-sourcing
 
+## 1.5.0
+
+### Minor Changes
+
+- [`9f155e3`](https://github.com/requence/event-sourcing/commit/9f155e3ff463a391abf30b52a5eb439862f50bb9) Thanks [@Torsten85](https://github.com/Torsten85)! - Add SurrealDB storage adapter
+
+  A new storage adapter backed by SurrealDB (server 3.x, `surrealdb` SDK v2) is available as `@requence/event-sourcing/surreal`. It implements the full storage contract — append-only event log with gapless, commit-ordered global positions via a counter record, per-stream optimistic concurrency with `ConcurrencyError`, checkpoint compare-and-swap, and aggregate-root/projection snapshots. The adapter creates its `SCHEMAFULL` tables automatically with idempotent DDL (opt out via `initSchema: false`; the statements are also exported). `surrealdb` is an optional peer dependency.
+
+  The memory adapter's storage implementation is now also exported as `createMemoryStorage`, and both adapters are covered by a shared storage-driver contract test suite.
+
+### Patch Changes
+
+- [`2a48ef6`](https://github.com/requence/event-sourcing/commit/2a48ef60a9aee5ab3e199f347fe6c1710891cb4e) Thanks [@Torsten85](https://github.com/Torsten85)! - Projections no longer apply the same event twice when several instances share one backing store. Each instance decided what it had already applied from a cursor only it could see, so two instances catching up over the same backlog — or one catching up while the other applied an event it had just appended — both ran the same handler, which showed up in consumers as a duplicate-key error or, where a handler applies a delta, as a silently wrong number. An event is now claimed through the checkpoint's compare-and-swap before its handler runs, so only one instance applies it. The claim is released again if that handler fails, so a failing handler still leaves its event to be retried rather than silently skipped.
+
 ## 1.4.1
 
 ### Patch Changes
