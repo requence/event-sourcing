@@ -266,86 +266,112 @@ export function buildProjectionCreator(params: {
 
       const runner = (async () => {
         await unlocked
-        await withProjectionInfo({ name, event }, async () => {
-          try {
-            await handler?.(event, {
-              replaying,
-              async replayUntil(position, filterEvents) {
-                if (position >= event.position) {
-                  throw new ProjectionReplayLoopError(
-                    `Event handler on${event.type} of projection ${name} tried to replay to the future`,
-                    { name, eventHandler: `on${event.type}` },
-                    event,
-                  )
-                }
 
-                locks.delete(event.streamId)
-                return api.replayUntil(event.streamId, position, filterEvents)
-              },
-            })
-          } catch (error) {
-            if (error instanceof ReplaySkipError) {
-              if (isReplaying()) {
-                return
-              }
+        // Take ownership of the event before anything observable happens, so a
+        // peer applying the same event does not apply it twice. `claimed` is
+        // null while replaying: a replay deliberately re-applies everything and
+        // `beginReplay` leaves the stored cursor where it was, so a claim would
+        // read that not-yet-rewound position and skip the whole run.
+        const claimed = isReplaying() ? null : await checkpointApi.claim(event)
 
-              throw new Error(
-                'ReplaySkipError should never be thrown outside replay',
-              )
-            }
-
-            if (
-              !(error instanceof Error) ||
-              error instanceof ProjectionReplayLoopError
-            ) {
-              throw error
-            }
-            throw new ProjectionEventHandlerExecutionError(
-              name,
-              `on${event.type}`,
-              event,
-              error,
-            )
-          }
-          try {
-            await globalEventHandler?.(event)
-          } catch (error) {
-            if (!(error instanceof Error)) {
-              throw error
-            }
-
-            throw new ProjectionEventHandlerExecutionError(
-              name,
-              'GLOBAL',
-              event,
-              error,
-            )
-          }
-        })
-
-        if (params.snapshot && snapshotting) {
-          const appliedEvents = await params.snapshot.incrementAppliedCount({
-            projection: name,
-            id: event.streamId,
-          })
-          const snapshot = await snapshotting.internalCapture(
-            event,
-            appliedEvents,
-          )
-
-          if (snapshot) {
-            await params.snapshot.put({
-              projectionType: name,
-              projectionId: event.streamId,
-              lastEventPosition: event.position,
-              state: snapshot.state,
-              schemaVersion: snapshot.version,
-              createdAt: new Date(),
-            })
-          }
+        if (claimed && !claimed.claimed) {
+          return
         }
 
-        await checkpointApi.upsert(event)
+        const release = claimed?.claimed ? claimed.release : null
+
+        try {
+          await withProjectionInfo({ name, event }, async () => {
+            try {
+              await handler?.(event, {
+                replaying,
+                async replayUntil(position, filterEvents) {
+                  if (position >= event.position) {
+                    throw new ProjectionReplayLoopError(
+                      `Event handler on${event.type} of projection ${name} tried to replay to the future`,
+                      { name, eventHandler: `on${event.type}` },
+                      event,
+                    )
+                  }
+
+                  locks.delete(event.streamId)
+                  return api.replayUntil(event.streamId, position, filterEvents)
+                },
+              })
+            } catch (error) {
+              if (error instanceof ReplaySkipError) {
+                if (isReplaying()) {
+                  return
+                }
+
+                throw new Error(
+                  'ReplaySkipError should never be thrown outside replay',
+                )
+              }
+
+              if (
+                !(error instanceof Error) ||
+                error instanceof ProjectionReplayLoopError
+              ) {
+                throw error
+              }
+              throw new ProjectionEventHandlerExecutionError(
+                name,
+                `on${event.type}`,
+                event,
+                error,
+              )
+            }
+            try {
+              await globalEventHandler?.(event)
+            } catch (error) {
+              if (!(error instanceof Error)) {
+                throw error
+              }
+
+              throw new ProjectionEventHandlerExecutionError(
+                name,
+                'GLOBAL',
+                event,
+                error,
+              )
+            }
+          })
+
+          if (params.snapshot && snapshotting) {
+            const appliedEvents = await params.snapshot.incrementAppliedCount({
+              projection: name,
+              id: event.streamId,
+            })
+            const snapshot = await snapshotting.internalCapture(
+              event,
+              appliedEvents,
+            )
+
+            if (snapshot) {
+              await params.snapshot.put({
+                projectionType: name,
+                projectionId: event.streamId,
+                lastEventPosition: event.position,
+                state: snapshot.state,
+                schemaVersion: snapshot.version,
+                createdAt: new Date(),
+              })
+            }
+          }
+        } catch (error) {
+          // The cursor was moved before this work ran, so it has to go back or
+          // the event would never be retried — a claim must not turn a failing
+          // handler into a silently skipped one.
+          await release?.()
+          throw error
+        }
+
+        // A claim already wrote the cursor. A replay did not take one, so it
+        // still advances the cursor the ordinary way.
+        if (!release) {
+          await checkpointApi.upsert(event)
+        }
       })()
 
       if (exclusive) {
