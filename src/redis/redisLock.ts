@@ -1,6 +1,6 @@
 import type { Redis } from 'ioredis'
 
-import type { LockCreator } from '../lock.ts'
+import { DEFAULT_LOCK_TTL, type LockCreator } from '../lock.ts'
 
 const extendScript = `
   if redis.call("get", KEYS[1]) == ARGV[1] then
@@ -18,7 +18,10 @@ const deleteScript = `
     end
 `
 
-export function redisLock(client: Redis, defaultTtl = 5000): LockCreator {
+export function redisLock(
+  client: Redis,
+  defaultTtl = DEFAULT_LOCK_TTL,
+): LockCreator {
   return async (rawKey) => {
     const key = Array.isArray(rawKey) ? rawKey.join(':') : rawKey
     const token = crypto.randomUUID()
@@ -33,6 +36,7 @@ export function redisLock(client: Redis, defaultTtl = 5000): LockCreator {
 
       let isReleased = false
       return {
+        ttl: defaultTtl,
         async extend(ttl) {
           const extended = await client.eval(
             extendScript,

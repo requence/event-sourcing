@@ -621,4 +621,46 @@ describe('hotAggregateRoot', () => {
 
     expect(called).toBe(10)
   })
+
+  it('keeps the lock alive while the stream replays', async () => {
+    const aggregateRoot = createAggregateRoot('slowReplay')
+      .withInitialState({ pings: 0 })
+      .withEvents(({ z }) => ({
+        Pinged: z.null(),
+      }))
+      .withEventHandlers((state) => ({
+        // Folding one event takes 10ms, so replaying ten of them outlives the
+        // 40ms lock by far. The replay is the library's own work, not a slow
+        // command, so it must not cost the caller its lock.
+        async onPinged() {
+          await setTimeout(10)
+          state.pings += 1
+        },
+      }))
+      .withCommands((_state, event) => ({
+        ping(times = 1) {
+          return Array.from({ length: times }, () => event('Pinged', null))
+        },
+      }))
+
+    const { pseudoEventStore } = setupEventStore(aggregateRoot, {
+      lock: lock(40),
+    })
+
+    await aggregateRoot.loadStream('a').ping(10).settled()
+
+    // Both replay ten events. Without the keep-alive the first one's lock
+    // lapses mid-replay, the second one takes it, and both append at v11.
+    await Promise.all([
+      aggregateRoot.loadStream('a').ping().settled(),
+      aggregateRoot.loadStream('a').ping().settled(),
+    ])
+
+    const persisted = pseudoEventStore.filter(
+      (event) => event.streamType === 'slowReplay',
+    )
+    expect(persisted.map((event) => event.streamVersion)).toEqual(
+      Array.from({ length: 12 }, (_, index) => index + 1),
+    )
+  })
 })

@@ -106,9 +106,12 @@ The lock is held for the duration of the command chain and released after the ev
 ### How It Works
 
 1. **Lock acquired** — Before any command runs, a mutex is acquired for the stream key (`<type>:<id>`).
-2. **Commands execute** — All chained commands run sequentially against the locked stream.
-3. **Events appended** — The resulting events are persisted with the expected version.
-4. **Lock released** — The lock is released after persistence (or on error).
+2. **Stream replayed** — The existing events are folded into the state. The lock is kept alive while this runs, however long the stream is.
+3. **Commands execute** — All chained commands run sequentially against the locked stream.
+4. **Events appended** — The resulting events are persisted with the expected version.
+5. **Lock released** — The lock is released after persistence (or on error).
+
+A command that runs longer than the lock's TTL still loses the lock — the TTL is what frees a lock nobody releases. Such a command either yields its events (each yield extends the lock) or relies on [`settled({ maxRetries })`](/reference/02-create-aggregate-root/#retrying-on-concurrency-conflicts).
 
 By default, the library uses an **in-memory lock** backed by `async-mutex` with a 5-second TTL. This is safe for single-process deployments but **does not protect across multiple instances**.
 

@@ -1,6 +1,21 @@
 import { Mutex } from 'async-mutex'
 
-export default function lock(defaultTtl = 5000) {
+export const DEFAULT_LOCK_TTL = 5000
+
+export type Lock = {
+  /** Moves the expiry to `ttl` from now (default: half the lock's TTL). */
+  extend(ttl?: number): Promise<boolean>
+  release(): Promise<void>
+  /**
+   * The TTL the lock was taken with. The aggregate root keeps a replay's lock
+   * alive at a quarter of it, and assumes {@link DEFAULT_LOCK_TTL} without it.
+   */
+  ttl?: number
+}
+
+export type LockCreator = (key: string | string[]) => Promise<Lock>
+
+export default function lock(defaultTtl = DEFAULT_LOCK_TTL): LockCreator {
   const locks = new Map<string, Mutex>()
   return async (key: string | string[]) => {
     const k = Array.isArray(key) ? key.join(':') : key
@@ -30,6 +45,7 @@ export default function lock(defaultTtl = 5000) {
     startTimer(defaultTtl)
 
     return {
+      ttl: defaultTtl,
       async extend(ttl?: number) {
         if (isReleased) {
           return false
@@ -54,5 +70,3 @@ export default function lock(defaultTtl = 5000) {
     }
   }
 }
-
-export type LockCreator = ReturnType<typeof lock>

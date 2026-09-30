@@ -17,7 +17,7 @@ import {
   InfiniteLoopError,
   ValidationError,
 } from './errors.ts'
-import type { LockCreator } from './lock.ts'
+import { DEFAULT_LOCK_TTL, type LockCreator } from './lock.ts'
 import { isRefreshing } from './refresh.ts'
 import createSnapshotGenerator, {
   type CompleteSnapshotGenerator,
@@ -530,6 +530,7 @@ export function createAggregateRoot<Name extends string>(type: Name) {
     let downstreamSettledPromise = () => Promise.resolve()
     let releaseLock!: () => Promise<void>
     let extendLock!: EventHandlerOptions['extendLock']
+    let lockTtl: number | undefined
 
     const warnReleaseLock = () => {
       if (releasedAfterChain) {
@@ -582,8 +583,25 @@ export function createAggregateRoot<Name extends string>(type: Name) {
     let commandChain = createLock([type, streamId]).then((lock) => {
       releaseLock = lock.release
       extendLock = lock.extend
+      lockTtl = lock.ttl
       return [] as Error | BaseInputEvent[]
     })
+
+    // A replay is the library's own work and takes as long as the stream is
+    // long, so unlike a slow command it must not cost the caller the lock.
+    // Extended on a timer while it runs, and never past it: a lock nobody
+    // releases still expires.
+    const keepLockAlive = async <T>(work: () => Promise<T>) => {
+      const timer = setInterval(
+        () => void extendLock().catch(() => false),
+        (lockTtl ?? DEFAULT_LOCK_TTL) / 4,
+      )
+      try {
+        return await work()
+      } finally {
+        clearInterval(timer)
+      }
+    }
     let commandChainTouched = false
     let releasedAfterChain = false
     let transactionDelay: TransactionDelay | undefined
@@ -769,7 +787,9 @@ export function createAggregateRoot<Name extends string>(type: Name) {
         // ensure commands are executed after load is finished
         commandChain = commandChain
           .then(() =>
-            loadUntil(state, snapshotApi, streamId, undefined, filter),
+            keepLockAlive(() =>
+              loadUntil(state, snapshotApi, streamId, undefined, filter),
+            ),
           )
           .then((loadedVersion) => {
             version = loadedVersion
