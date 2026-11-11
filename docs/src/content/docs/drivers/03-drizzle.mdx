@@ -31,7 +31,7 @@ The driver uses a dedicated `event_sourcing` PostgreSQL schema with the followin
 | `projection_snapshots` | Cached projection state for snapshot-based projections |
 | `projection_applied_events` | Counter for snapshot frequency tracking |
 
-The table definitions are exported from `@requence/event-sourcing/drizzle/postgres` for use in Drizzle migrations:
+The driver does **not** create the schema or the tables — neither `autoInit` nor `init()` runs any DDL. Create them through your own Drizzle migrations. The table definitions are exported from `@requence/event-sourcing/drizzle/postgres`:
 
 ```typescript
 import {
@@ -42,6 +42,23 @@ import {
   projectionAppliedEvents,
 } from '@requence/event-sourcing/drizzle/postgres'
 ```
+
+The simplest way is to re-export them from the schema file that drizzle-kit reads, so `drizzle-kit generate` includes them in your migrations:
+
+```typescript
+// src/db/schema.ts
+export * from '@requence/event-sourcing/drizzle/postgres'
+
+export const users = pgTable('users', { /* your read models */ })
+```
+
+<Aside type="caution">
+  The tables are defined without explicit column names, so their column names follow the `casing` option. Use the **same** `casing` for your Drizzle instance and your drizzle-kit config (e.g. both `snake_case`, or both unset). A mismatch makes the driver query columns that the migration did not create.
+</Aside>
+
+<Aside type="note">
+  The `events` table declares an `insert only` policy, so the generated migration enables **row level security** on `event_sourcing.events` and adds a policy that allows only `INSERT`. The table owner bypasses RLS, so this has no effect as long as the application connects as the owner. If the application connects as a different role, grant that role `SELECT` (and a matching policy), otherwise the driver cannot read events.
+</Aside>
 
 ## Configuration
 

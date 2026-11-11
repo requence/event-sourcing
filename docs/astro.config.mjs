@@ -68,6 +68,7 @@ export default defineConfig({
 					label: 'Guides',
 					items: [
 						{ label: 'User Management', slug: 'guides/01-user-management' },
+						{ label: 'Personal Data and Erasure', slug: 'guides/02-personal-data' },
 					],
 				},
 			],

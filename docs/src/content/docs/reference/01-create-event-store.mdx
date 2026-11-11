@@ -13,6 +13,8 @@ import { Aside } from '@astrojs/starlight/components';
 import { createEventStore } from '@requence/event-sourcing'
 ```
 
+This is the core function, which takes the storage functions (`loadEvents`, `appendEvents`, `checkpoint`) directly. In most applications you use the `createEventStore` of a [driver](/drivers/01-overview/) instead (e.g. `@requence/event-sourcing/drizzle`), which supplies those functions for you and takes a `database` instead. Everything else on this page — options, return value, transactions — applies to both.
+
 ## Signature
 
 ```typescript
@@ -99,6 +101,7 @@ Inside a [process manager](/reference/04-create-process-manager/) or a [transact
 The **read/reaction path** works differently, and it is important to understand how events reach your handlers when scaling:
 
 - Events are delivered to projections, process managers, and event listeners **only on the instance that appended them**. There is no built-in cross-instance event bus. On startup, each instance also catches up from its checkpoint, but after that it only sees events it writes itself.
+- The same applies to **separate processes** such as seed or migration scripts. A script that appends events only updates read models if it registers the same projections itself (and waits for `eventStore.isReady()` / `settled()` before exiting). A server that is already running does not pick those events up until it restarts.
 - Because each event is therefore processed by exactly **one** instance, projections and listeners that write to a **shared store** (a SQL read model, Redis, a search index) or perform **idempotent side effects** stay consistent — every event is applied exactly once, with no duplication.
 
 Given that model, the recommended topology is:
@@ -185,7 +188,7 @@ const userRoot = eventStore.getAggregateRoot('user')
 
 ### `transaction(handler, options?)`
 
-Executes the given async handler inside a transaction. Events from all aggregate roots within the handler are batched and committed atomically.
+Executes the given async handler inside a transaction. Commands on all streams dispatched within the handler are validated first; events are only appended once **every** command succeeded. If any command (or the handler itself) throws, no stream appends anything.
 
 ```typescript
 await eventStore.transaction(async () => {
@@ -208,6 +211,12 @@ await eventStore.transaction(async () => {
 | Option | Type | Description |
 |---|---|---|
 | `settled` | `SettledOptions` | Defaults applied when the transaction auto-settles dispatched streams — see [Retrying on concurrency conflicts](/reference/02-create-aggregate-root/#retrying-on-concurrency-conflicts). |
+
+When the returned promise resolves, every dispatched stream is settled: its events are persisted and all projections, process managers, and event listeners have processed them. Read models are up to date at that point.
+
+<Aside type="caution">
+  The transaction is atomic with respect to **command errors**, not at the storage level. After validation, each stream appends its events separately (one `INSERT` per stream with the Drizzle driver, not one database transaction). If an append fails afterwards — a `ConcurrencyError` on a later stream, or a lost database connection — streams that were already appended stay persisted. Use `{ settled: { maxRetries } }` to recover from concurrency conflicts, and keep commands that must not be partially applied on a single stream where that matters.
+</Aside>
 
 ### `init()`
 
@@ -242,17 +251,15 @@ await eventStore.rebuild()
 ## Usage Example
 
 ```typescript
-import { createEventStore } from '@requence/event-sourcing'
-import { createDrizzleAdapter } from '@requence/event-sourcing/drizzle'
+import { createEventStore } from '@requence/event-sourcing/drizzle'
+import { drizzle } from 'drizzle-orm/node-postgres'
 import userRoot from './aggregates/user.ts'
 import orgRoot from './aggregates/organization.ts'
 
-const adapter = createDrizzleAdapter(db)
+const db = drizzle(process.env.DATABASE_URL!)
 
 const eventStore = createEventStore({
-  loadEvents: adapter.loadEvents,
-  appendEvents: adapter.appendEvents,
-  checkpoint: adapter.checkpoint,
+  database: db,
   aggregateRoots: [userRoot, orgRoot],
 })
 

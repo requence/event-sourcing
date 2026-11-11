@@ -185,6 +185,23 @@ user.rename('Bob')
 await user.settled()
 ```
 
+<Aside type="caution">
+  The stream's lock is acquired as soon as `newStream()` or `loadStream()` is called, and it is only held for commands that are called **synchronously** right after it (in the same tick). If you `await` something between opening the stream and calling the first command, the lock is released before the command runs: the command still executes, but without the lock, so a concurrent writer that holds the lock can fail with a `ConcurrencyError`. The library then logs `aggregate root for <type>:<id> was open too long`.
+
+  Do all asynchronous work (loading data, hashing, encrypting) **before** opening the stream:
+
+  ```typescript
+  // ✗ the lock is gone by the time rename() runs
+  const user = userRoot.loadStream(id)
+  const name = await normalize(input)
+  user.rename(name)
+
+  // ✓ prepare first, then open the stream and call commands synchronously
+  const name = await normalize(input)
+  await userRoot.loadStream(id).rename(name).settled()
+  ```
+</Aside>
+
 ### Stream Methods
 
 All streams expose the following methods alongside the commands defined via `withCommands`:
