@@ -163,3 +163,13 @@ eventStore
   .concurrent()
   .withEventHandlers({ /* ... */ })
 ```
+
+### Ordering guarantees
+
+| | Guaranteed? |
+|---|---|
+| Events of the **same stream**, in stream order | ✅ Yes (unless `.concurrent()`) |
+| Events of **different streams**, in global `position` order | ❌ No — on a single instance delivery usually follows append order, but this is not guaranteed, and across [multiple instances](/reference/01-create-event-store/#running-multiple-instances) events are processed out of global order |
+| Events of **different projections** relative to each other | ⚠️ Only live — a newly appended event is handed to all projections before the next one. During startup catch-up, `replay()` and `rebuild()`, each projection progresses from its own checkpoint independently |
+
+Design read models so they do not depend on cross-stream or cross-projection ordering. In particular, avoid foreign keys **between tables written by different projections** (or by handlers for different streams): the referenced row may not exist yet when the referencing event is applied. Validate relationships in the aggregate's commands instead, where the rules live anyway.

@@ -1,0 +1,134 @@
+---
+title: Personal Data and Erasure
+description: How to store personal data in an append-only event log and still honour erasure requests (GDPR), using crypto-shredding.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Events are immutable: the library never updates or deletes them, and the Drizzle driver even restricts the `events` table to inserts. That conflicts with data-protection law (e.g. the GDPR "right to erasure") as soon as events contain personal data such as names, e-mail addresses, or phone numbers.
+
+The library has **no built-in erasure mechanism**. This guide shows the established pattern for it — **crypto-shredding** — built from the library's existing primitives.
+
+## The idea
+
+1. Every person (the *data subject*) gets their own encryption key, stored **outside** the event log in an ordinary, deletable table.
+2. Personal fields are encrypted with that key **before** they go into an event. The event only contains ciphertext.
+3. Projections decrypt while building read models.
+4. To erase a person, **delete their key**. The events stay untouched, but the personal data in them can never be decrypted again — including in future replays.
+
+Non-personal data in the same events (amounts, dates, IDs) stays fully usable, so the audit trail and replays keep working.
+
+<Aside type="note">
+  Whether crypto-shredding satisfies erasure obligations in your jurisdiction, and how it interacts with retention duties (e.g. bookkeeping records that must be kept for years), is a legal question. Clarify it with your data-protection officer.
+</Aside>
+
+## 1. Key store
+
+```typescript
+import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
+import { z } from 'zod'
+
+export const encrypted = z.object({ subject: z.string(), iv: z.string(), data: z.string() })
+export type Encrypted = z.infer<typeof encrypted>
+
+// keys: subjectId -> 32-byte key, kept in a normal table (wrap it with a
+// master key from your secret store in production)
+export async function encrypt(subject: string, plaintext: string): Promise<Encrypted> {
+  const key = await loadOrCreateKey(subject)
+  const iv = randomBytes(12)
+  const cipher = createCipheriv('aes-256-gcm', key, iv)
+  const data = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final(), cipher.getAuthTag()])
+  return { subject, iv: iv.toString('base64'), data: data.toString('base64') }
+}
+
+/** Plaintext, or null once the subject's key has been shredded */
+export async function decrypt(value: Encrypted | null): Promise<string | null> {
+  const key = value && (await loadKey(value.subject))
+  if (!key) return null
+  const raw = Buffer.from(value.data, 'base64')
+  const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(value.iv, 'base64'))
+  decipher.setAuthTag(raw.subarray(-16))
+  return Buffer.concat([decipher.update(raw.subarray(0, -16)), decipher.final()]).toString('utf8')
+}
+
+export async function shred(subject: string) {
+  await deleteKey(subject)
+}
+```
+
+## 2. Encrypted fields in events
+
+Use the encrypted schema for personal fields only:
+
+```typescript
+export const user = createAggregateRoot('user')
+  .withInitialState({ exists: false, erased: false })
+  .withEvents({
+    UserRegistered: z.object({ name: encrypted, email: encrypted.nullable() }),
+    UserPersonalDataErased: z.null(),
+  })
+  .withEventHandlers((state) => ({
+    onUserRegistered() { state.exists = true },
+    onUserPersonalDataErased() { state.erased = true },
+  }))
+  .withCommands((state, event) => ({
+    register(values: { name: Encrypted; email: Encrypted | null }) {
+      return event('UserRegistered', values)
+    },
+    erasePersonalData() {
+      if (!state.exists || state.erased) return
+      return event('UserPersonalDataErased')
+    },
+  }))
+```
+
+Encrypt **before** opening the stream — encryption is asynchronous, and a stream only holds its lock for commands called synchronously after `newStream()` / `loadStream()` (see [Stream API](/reference/02-create-aggregate-root/#stream-api)):
+
+```typescript
+const id = crypto.randomUUID()
+const name = await encrypt(`user:${id}`, input.name)
+const email = input.email ? await encrypt(`user:${id}`, input.email) : null
+
+await user.newStream(id).register({ name, email }).settled()
+```
+
+## 3. Decrypt in projections
+
+```typescript
+eventStore.createProjection('users')
+  .withEventHandlers({
+    async onUserRegistered({ streamId, payload }) {
+      await db.insert(users).values({
+        id: streamId,
+        name: await decrypt(payload.name),   // null after erasure
+        email: await decrypt(payload.email),
+      })
+    },
+    async onUserPersonalDataErased({ streamId }) {
+      await db.update(users).set({ name: null, email: null }).where(eq(users.id, streamId))
+    },
+  })
+  .withReplay({
+    deleteAll: async () => { await db.delete(users) },
+  })
+```
+
+Read models must accept `null` for personal fields: after erasure, a replay produces `null` instead of the original value.
+
+## 4. Erase
+
+Record the erasure as an event first (it is part of the audit trail and clears existing read models), then shred the key:
+
+```typescript
+export async function erasePersonalData(userId: string) {
+  await user.loadStream(userId).erasePersonalData().settled()
+  await shred(`user:${userId}`)
+}
+```
+
+## Things to keep in mind
+
+- **Choose subjects deliberately.** Data about one person can appear before they have an ID of their own (e.g. in an invitation). Either encrypt it under the later subject, or shred all related subjects together on erasure.
+- **Never put personal data in plain fields** — including `metadata`, stream IDs, and `actorId`. Use opaque IDs there.
+- **Caches and copies:** keys cached in memory, read models, search indexes, logs, and backups must be covered by the erasure process as well.
+- **Key loss is data loss.** Back up the key table (and the master key that wraps it) like the event store itself.

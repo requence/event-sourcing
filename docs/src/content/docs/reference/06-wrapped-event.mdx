@@ -42,6 +42,43 @@ All methods return the `WrappedEvent` for chaining.
 }))
 ```
 
+## Setting Metadata Centrally
+
+Calling `.withActorId()` in every command does not scale. Use the [`postProcessEvent`](/reference/01-create-event-store/#parameters) hook of the event store to decorate **every** event before it is appended — typically from a request context held in `AsyncLocalStorage`. Use the `withDefault…` variants so that values set explicitly in a command win:
+
+```typescript
+import { AsyncLocalStorage } from 'node:async_hooks'
+
+type RequestContext = { actorId: string; correlationId: string; tenantId?: string }
+export const requestContext = new AsyncLocalStorage<RequestContext>()
+
+const eventStore = createEventStore({
+  database: db,
+  aggregateRoots: [user, project],
+  postProcessEvent(event) {
+    const ctx = requestContext.getStore()
+    return event
+      .withDefaultActorId(ctx?.actorId ?? 'system')
+      .withDefaultCorrelationId(ctx?.correlationId)
+      .withAdditionalMetadata(ctx?.tenantId ? { tenantId: ctx.tenantId } : null)
+  },
+})
+
+// e.g. in an HTTP middleware
+app.use((req, res, next) =>
+  requestContext.run(
+    { actorId: `user:${req.userId}`, correlationId: crypto.randomUUID() },
+    next,
+  ),
+)
+```
+
+The context is preserved across [concurrency retries](/reference/02-create-aggregate-root/#retrying-on-concurrency-conflicts), so retried events carry the same actor and correlation ID.
+
+<Aside type="note">
+  With the Drizzle driver, `causationId` and `correlationId` are `uuid` columns — pass UUIDs. `actorId` is free text (e.g. `user:<id>`, `system`).
+</Aside>
+
 ## Event Shape
 
 Once a `WrappedEvent` is persisted, it becomes a `BaseOutputEvent` with the following shape:
